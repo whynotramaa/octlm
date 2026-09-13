@@ -1,0 +1,30 @@
+[project]
+name = "octlm"
+version = "0.1.0"
+description = "A small language-model engineering lab"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "numpy>=2.5.3",
+    "torch==2.14.0",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.13,<1"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10

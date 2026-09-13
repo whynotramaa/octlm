@@ -1,0 +1,23 @@
+[model]
+context_length = 128
+d_model = 128
+n_heads = 4
+n_layers = 2
+ff_multiplier = 4
+dropout = 0.0
+
+[training]
+seed = 1337
+batch_size = 8
+steps = 200
+eval_interval = 20
+learning_rate = 0.0003
+min_learning_rate = 0.00003
+warmup_steps = 20
+weight_decay = 0.1
+grad_clip = 1.0
+
+[tokenizer]
+vocab_size = 1024
+min_frequency = 2
+
