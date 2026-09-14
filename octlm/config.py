@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from octlm.model import DecoderConfig
+
 
 @dataclass(frozen=True)
 class ModelSettings:
@@ -15,6 +17,13 @@ class ModelSettings:
     n_layers: int
     ff_multiplier: int
     dropout: float
+    position: str = "learned"
+    norm: str = "layernorm"
+    feed_forward: str = "gelu"
+    attention: str = "naive"
+    residual: str = "pre"
+    kv_heads: int = 0
+    rope_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -58,15 +67,9 @@ class ProjectConfig:
         return config
 
     def validate(self) -> None:
-        model = self.model
         training = self.training
         tokenizer = self.tokenizer
-        if min(model.context_length, model.d_model, model.n_heads, model.n_layers) < 1:
-            raise ValueError("model dimensions must be positive")
-        if model.d_model % model.n_heads:
-            raise ValueError("d_model must be divisible by n_heads")
-        if model.ff_multiplier < 1 or not 0 <= model.dropout < 1:
-            raise ValueError("ff_multiplier and dropout are invalid")
+        DecoderConfig(vocab_size=tokenizer.vocab_size, **asdict(self.model)).validate()
         if min(training.batch_size, training.steps, training.eval_interval) < 1:
             raise ValueError("training counts must be positive")
         if not 0 <= training.warmup_steps <= training.steps:

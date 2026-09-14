@@ -17,6 +17,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from octlm.config import ProjectConfig
+from octlm.corpus import load_documents
 from octlm.model import Decoder, DecoderConfig, parameter_count
 from octlm.tokenizer import ByteBPETokenizer, CharacterTokenizer
 
@@ -46,12 +47,27 @@ def data_fingerprint(paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def resolve_device(name: str | None) -> torch.device:
+    """`auto` and `None` take the GPU when the machine has one."""
+    if name in (None, "auto"):
+        name = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.device(name)
+
+
 def decoder_config(config: ProjectConfig, vocab_size: int) -> DecoderConfig:
     return DecoderConfig(vocab_size=vocab_size, **asdict(config.model))
 
 
-def make_blocks(text: str, tokenizer: Tokenizer, context_length: int) -> TokenBlocks:
-    token_ids = tokenizer.encode(text, add_special_tokens=True)
+def read_documents(path: Path) -> list[str]:
+    """A .jsonl path is a corpus split, anything else is one document."""
+    return load_documents(path) if path.suffix == ".jsonl" else [path.read_text()]
+
+
+def make_blocks(texts: str | list[str], tokenizer: Tokenizer, context_length: int) -> TokenBlocks:
+    documents = [texts] if isinstance(texts, str) else texts
+    token_ids: list[int] = []
+    for document in documents:
+        token_ids.extend(tokenizer.encode(document, add_special_tokens=True))
     width = context_length + 1
     if len(token_ids) < width:
         token_ids.extend([tokenizer.pad_id] * (width - len(token_ids)))
@@ -91,6 +107,7 @@ def optimizer_for(model: nn.Module, config: ProjectConfig) -> torch.optim.AdamW:
 
 def evaluate(model: Decoder, blocks: TokenBlocks, pad_id: int) -> dict[str, float]:
     model.eval()
+    device = next(model.parameters()).device
     nll_sum = 0.0
     token_count = 0
     byte_count = 0
@@ -98,6 +115,8 @@ def evaluate(model: Decoder, blocks: TokenBlocks, pad_id: int) -> dict[str, floa
         for inputs, targets, byte_lengths in zip(
             blocks.inputs, blocks.targets, blocks.target_bytes, strict=True
         ):
+            inputs, targets = inputs.to(device), targets.to(device)
+            byte_lengths = byte_lengths.to(device)
             logits = model(inputs.unsqueeze(0))
             losses = F.cross_entropy(
                 logits.flatten(0, 1), targets, ignore_index=pad_id, reduction="none"
@@ -181,11 +200,13 @@ def train_model(
     checkpoint: Path | None = None,
     resume: Path | None = None,
     metrics_path: Path | None = None,
+    device: str | None = None,
 ) -> tuple[Decoder, torch.optim.AdamW, list[dict[str, float | int | str]]]:
     random.seed(config.training.seed)
     torch.manual_seed(config.training.seed)
     generator = torch.Generator().manual_seed(config.training.seed + 1)
-    model = Decoder(decoder_config(config, _vocab_size(tokenizer)))
+    target = resolve_device(device)
+    model = Decoder(decoder_config(config, _vocab_size(tokenizer))).to(target)
     optimizer = optimizer_for(model, config)
     expected = {
         "config_hash": config.fingerprint,
@@ -196,11 +217,14 @@ def train_model(
     final_step = min(stop_after or config.training.steps, config.training.steps)
     records: list[dict[str, float | int | str]] = []
     started = time.perf_counter()
+    train_seconds = 0.0
     for step in range(start_step, final_step):
+        tick = time.perf_counter()
         rate = learning_rate(step, config)
         for group in optimizer.param_groups:
             group["lr"] = rate
         inputs, targets, _ = train_blocks.batch(config.training.batch_size, generator)
+        inputs, targets = inputs.to(target), targets.to(target)
         optimizer.zero_grad(set_to_none=True)
         logits = model(inputs)
         loss = F.cross_entropy(
@@ -211,14 +235,17 @@ def train_model(
             model.parameters(), config.training.grad_clip
         )
         optimizer.step()
+        train_seconds += time.perf_counter() - tick
         if (step + 1) % config.training.eval_interval == 0 or step + 1 == final_step:
             validation = evaluate(model, validation_blocks, tokenizer.pad_id)
             record: dict[str, float | int | str] = {
+                "device": str(target),
                 "elapsed_seconds": time.perf_counter() - started,
                 "gradient_norm": float(gradient_norm),
                 "learning_rate": rate,
                 "step": step + 1,
                 "train_loss": loss.item(),
+                "train_seconds": train_seconds,
                 "type": "training",
                 **{f"validation_{key}": value for key, value in validation.items()},
             }
@@ -252,11 +279,11 @@ def decode_generation(tokenizer: Tokenizer, token_ids: list[int]) -> str:
     return tokenizer.decode(token_ids, skip_special_tokens=True)
 
 
-def load_or_train_tokenizer(kind: str, train_text: str, config: ProjectConfig) -> Tokenizer:
+def load_or_train_tokenizer(kind: str, documents: list[str], config: ProjectConfig) -> Tokenizer:
     if kind == "character":
-        return CharacterTokenizer.train([train_text])
+        return CharacterTokenizer.train(documents)
     return ByteBPETokenizer.train(
-        [train_text], config.tokenizer.vocab_size, config.tokenizer.min_frequency
+        documents, config.tokenizer.vocab_size, config.tokenizer.min_frequency
     )
 
 
@@ -286,6 +313,7 @@ def main() -> None:
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--metrics", type=Path)
     parser.add_argument("--stop-after", type=int)
+    parser.add_argument("--device", default="auto", help="auto, cpu, cuda, or cuda:N")
     parser.add_argument("--overfit", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -293,11 +321,11 @@ def main() -> None:
     if args.dry_run:
         dry_run(config)
         return
-    train_text = args.train.read_text()
-    validation_text = args.validation.read_text()
-    tokenizer = load_or_train_tokenizer(args.tokenizer, train_text, config)
-    train_blocks = make_blocks(train_text, tokenizer, config.model.context_length)
-    validation_blocks = make_blocks(validation_text, tokenizer, config.model.context_length)
+    train_documents = read_documents(args.train)
+    validation_documents = read_documents(args.validation)
+    tokenizer = load_or_train_tokenizer(args.tokenizer, train_documents, config)
+    train_blocks = make_blocks(train_documents, tokenizer, config.model.context_length)
+    validation_blocks = make_blocks(validation_documents, tokenizer, config.model.context_length)
     if args.overfit:
         train_blocks = TokenBlocks(
             train_blocks.inputs[:1], train_blocks.targets[:1], train_blocks.target_bytes[:1]
@@ -314,8 +342,9 @@ def main() -> None:
         args.checkpoint,
         args.resume,
         args.metrics,
+        args.device,
     )
-    prompt = train_blocks.inputs[0, :8].unsqueeze(0)
+    prompt = train_blocks.inputs[0, :8].unsqueeze(0).to(next(model.parameters()).device)
     generated = model.generate(prompt, 32)[0].tolist()
     print(_json({"text": decode_generation(tokenizer, generated), "type": "generation"}))
     print(

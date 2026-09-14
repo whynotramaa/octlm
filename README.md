@@ -10,11 +10,16 @@ The small model is the lab, not the product. Nothing here chases frontier capabi
 ## Status
 
 Day 1 is complete: EXP-001 through EXP-008, covering Phase 0 and Phase 1 of nine phases. What runs
-today is a character tokenizer, a byte-level BPE tokenizer, a Generation 0 decoder, a training loop
-with exact resume, and a benchmark schema. Everything is CPU-only and trains on the repository's own
-Markdown files. There is no real dataset yet.
+today is a character tokenizer, a byte-level BPE tokenizer, a decoder, a training loop with exact
+resume, and a benchmark schema. Everything is CPU-only.
 
-Read `notes/day1.md` for the research sources, the measurements, and every keep-or-revert decision.
+Day 2 is partly complete. The modern decoder components are implemented and tested, the code and
+prose corpus is built, and EXP-014 is measured. EXP-009 to EXP-013 and EXP-015 need their training
+runs, which take about an hour on one CPU machine. `notes/day2.md` lists those commands with their
+measured cost.
+
+Read `notes/day1.md` and `notes/day2.md` for the research sources, the measurements, and every
+keep-or-revert decision.
 
 ## Requirements
 
@@ -41,7 +46,7 @@ uv run python -m octlm.train --config configs/day1.toml --dry-run
 ```
 
 ```json
-{"config_sha256":"f77b2a99c8d4d42e1d62093ff6c71d010ea75268fc8d2325d7f276bf6c7c3ee8","logits_shape":[1,128,1024],"parameters":541952,"type":"dry_run"}
+{"config_sha256":"12cc0f1de67889e04411e8d5d78e62ae284318e001f7403f3c8068fb613eae5e","logits_shape":[1,128,1024],"parameters":541952,"type":"dry_run"}
 ```
 
 Train both tokenizers and write them to `artifacts/day1/`. Each line of output is one JSON record
@@ -78,6 +83,27 @@ Measure the forward pass at several context lengths. Day 1 supports only `--dumm
 uv run python -m octlm.bench --dummy --contexts 128 256 512 1024 2048
 ```
 
+Build the Day 2 corpus. It reads the Python standard library from this machine and downloads six
+public-domain books once, into `data/`:
+
+```sh
+uv run python -m octlm.corpus
+```
+
+Run the Day 2 experiments. Each stage appends JSONL to `runs/`. The first four are quick. `variants`
+and `length` are training runs that saturate every core for tens of minutes, so start them when the
+machine is free:
+
+```sh
+uv run python -m octlm.day2 tiled         # tiled attention against SDPA
+uv run python -m octlm.day2 equivalence   # SDPA against the handwritten path
+uv run python -m octlm.day2 sdpa          # math against flash, memory and throughput
+uv run python -m octlm.day2 cache         # KV cache bytes per head count
+uv run python -m octlm.day2 variants      # the architecture grid, about 50 minutes
+uv run python -m octlm.day2 length --config configs/day2-long.toml
+uv run python -m octlm.day2 report        # summarize the grid
+```
+
 Run the checks:
 
 ```sh
@@ -100,6 +126,27 @@ uv run ruff format --check .
 | `--stop-after` | none | Stop before `training.steps` |
 | `--overfit` | off | Train and validate on one block |
 | `--dry-run` | off | Build the model, print the shape, exit |
+| `--device` | `auto` | `auto`, `cpu`, `cuda`, or `cuda:N`. `auto` takes the GPU when there is one |
+
+## Running on a GPU
+
+The development machine has no GPU, so every measurement in `notes/` is a CPU measurement.
+`--device` on `octlm.train`, `octlm.day2`, and `octlm.bench` moves the model and its batches to
+CUDA. It defaults to `auto`, which takes the GPU when the machine has one. Each training record
+carries the device it ran on.
+
+`notebooks/octlm-colab.ipynb` runs the training stages on a Colab GPU. Open it in Colab, pick a GPU
+runtime, and run the cells in order. It clones this repository and uses Colab's preinstalled
+PyTorch, because `uv.lock` pins the CPU build. That means the Python and PyTorch versions differ
+from the local environment, so Colab timings cannot be compared against the CPU timings in `notes/`.
+
+Two stages are worth a GPU: `variants` and `length`. The rest of Day 2 measures CPU behavior.
+`sdpa` in particular reports process resident memory, which does not describe GPU allocation, so it
+stays on CPU until Phase 5 gives `bench.py` a device-aware memory field.
+
+`octlm.corpus` reads the Python standard library of the machine it runs on. A corpus built on Colab
+is not the corpus in `data/manifest.json`, so copy `data/` and `artifacts/day2/` across if the
+numbers need to line up with an earlier run.
 
 ## What is in the repository
 
@@ -110,10 +157,18 @@ octlm/
   model.py       Generation 0 decoder: learned positions, pre-LayerNorm, MHA, GELU, tied head
   train.py       training loop, evaluation, atomic checkpoints, resume, CLI
   bench.py       forward-pass measurement and the frozen `octlm-bench-v1` record schema
-configs/day1.toml
-tests/test_day1.py
-notes/day1.md    research, decisions, measurements, failures, exit check
+  corpus.py      code and prose corpus builder, manifest with hashes and licenses
+  day2.py        Day 2 experiment stages and the tiled attention sketch
+notebooks/octlm-colab.ipynb     GPU runs on Colab
+configs/day1.toml, configs/day2.toml, configs/day2-long.toml
+tests/test_day1.py, tests/test_day2.py
+notes/day1.md, notes/day2.md    research, decisions, measurements, failures, exit checks
 ```
+
+`model.py` carries both generations on one code path. Every Day 2 switch defaults to the Day 1
+behavior: `position` picks learned, sinusoidal, or rotary embeddings, `norm` picks LayerNorm or
+RMSNorm, `feed_forward` picks GELU or SwiGLU, `attention` picks the handwritten path or SDPA,
+`residual` picks pre-norm or post-norm, and `kv_heads` sets the grouped-query head count.
 
 Both tokenizers preserve input bytes exactly. Neither lowercases text nor normalizes Unicode. BPE
 learns merges from the training corpus only, breaks equal-frequency ties by token ID, and never
@@ -150,11 +205,9 @@ memory reached 504 MB. The largest verified Day 1 context is 2,048 tokens.
 
 These are deferred on purpose, not missing by accident:
 
-- No dataset. The model trains on this repository's own Markdown.
-- No KV cache, no SDPA, no `torch.compile`, no mixed precision, no quantization. Attention is
-  written out with tensor operations so the arithmetic stays readable.
+- No KV cache, no `torch.compile`, no mixed precision, no quantization. Day 2 added SDPA; Day 1's
+  handwritten attention stays as the reference the SDPA path is checked against.
 - No sampling. Generation is greedy.
-- No RoPE, RMSNorm, SwiGLU, or grouped-query attention.
 - No GPU path. `nvidia-smi` found no driver on the development machine.
 - `bench.py` emits the full `octlm-bench-v1` record but fills only the fields Day 1 can measure.
   Decode throughput, time to first token, and perplexity stay null until Phase 5 fills them.
@@ -163,6 +216,32 @@ These are deferred on purpose, not missing by accident:
 
 The repository layout in `PLAN.md` lists directories for every phase. Those directories get created
 when their experiment starts. Empty scaffolding is not allowed.
+
+## What Day 2 measured
+
+`tiled_attention` reproduces `scaled_dot_product_attention` to 4.8e-7 at every block size, and the
+full model through SDPA matches the handwritten path to about 1e-6 at 8, 4, 2, and 1 KV heads. That
+equivalence is what licenses the SDPA path in later runs.
+
+Attention benchmark at batch 1, 8 heads, head width 32, one forward pass per row. Each measurement
+runs in its own process, because peak resident memory is a process high-water mark:
+
+| Length | dtype | Backend | Seconds | Tokens/s | RSS growth |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 1024 | float32 | math | 0.0220 | 46,491 | 80 MB |
+| 1024 | float32 | flash | 0.0038 | 268,554 | 9 MB |
+| 4096 | float32 | math | 0.3177 | 12,891 | 1.29 GB |
+| 4096 | float32 | flash | 0.0428 | 95,673 | 33 MB |
+| 8192 | float32 | math | 1.2644 | 6,479 | 5.17 GB |
+| 8192 | float32 | flash | 0.1200 | 68,250 | 62 MB |
+
+At 8192 tokens the flash kernel is 10.5x faster on 84x less memory growth. The math backend
+allocates the full score matrix, so its footprint grows quadratically. Bfloat16 is slower than
+float32 on this CPU at every length, which is the opposite of the GPU case.
+
+The corpus is 7.0 MB of training text and 0.9 MB held out, 60 percent Python standard library and 40
+percent public-domain books. A 2,048-entry BPE tokenizer trained on a tenth of it reaches 0.407
+tokens per byte, against 0.525 for the Day 1 tokenizer on the Day 1 corpus.
 
 ## What is coming
 
