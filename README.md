@@ -11,15 +11,18 @@ The small model is the lab, not the product. Nothing here chases frontier capabi
 
 Day 1 is complete: EXP-001 through EXP-008, covering Phase 0 and Phase 1 of nine phases. What runs
 today is a character tokenizer, a byte-level BPE tokenizer, a decoder, a training loop with exact
-resume, and a benchmark schema. Everything is CPU-only.
+resume, and a benchmark schema.
 
-Day 2 is partly complete. The modern decoder components are implemented and tested, the code and
-prose corpus is built, and EXP-014 is measured. EXP-009 to EXP-013 and EXP-015 need their training
-runs, which take about an hour on one CPU machine. `notes/day2.md` lists those commands with their
-measured cost.
+Day 2 is complete: EXP-009 through EXP-015. RoPE, SwiGLU, and two KV heads are keepers, post-norm is
+reverted, and RMSNorm is quality-neutral at this width. Training moved to a Colab T4, because the
+laptop overheats under an hour-long grid.
 
-Read `notes/day1.md` and `notes/day2.md` for the research sources, the measurements, and every
-keep-or-revert decision.
+Day 3a is in progress: EXP-016 through EXP-019. Multi-token prediction, sliding-window and strided
+attention, block-compressed KV, and MLA are built, tested, and waiting on GPU time. Nothing is
+measured yet. EXP-020 through EXP-025, the MoE and optimizer half, is Day 3b.
+
+Read `notes/day1.md`, `notes/day2.md`, and `notes/day3.md` for the research sources, the
+measurements, and every keep-or-revert decision.
 
 ## Requirements
 
@@ -104,6 +107,24 @@ uv run python -m octlm.day2 length --config configs/day2-long.toml
 uv run python -m octlm.day2 report        # summarize the grid
 ```
 
+Run the Day 3a experiments. `cache` and `report` are arithmetic and summaries, so they run anywhere.
+The four experiment stages train and belong on a GPU. Stage 0 comes first and decides whether the
+rest of the day is readable:
+
+```sh
+# Stage 0: the seed spread at the Day 3 budget, in its own file
+uv run python -m octlm.day2 variants --config configs/day3.toml \
+    --variants baseline swiglu modern --out runs/day3-floor.jsonl
+uv run python -m octlm.day2 report --out runs/day3-floor.jsonl
+
+uv run python -m octlm.day3 cache --config configs/day3-long.toml   # cache arithmetic, instant
+uv run python -m octlm.day3 mtp --config configs/day3.toml          # EXP-016
+uv run python -m octlm.day3 sparse --config configs/day3-long.toml       # EXP-017
+uv run python -m octlm.day3 compressed --config configs/day3-long.toml   # EXP-018
+uv run python -m octlm.day3 mla --config configs/day3-long.toml          # EXP-019
+uv run python -m octlm.day3 report
+```
+
 Run the checks:
 
 ```sh
@@ -127,6 +148,9 @@ uv run ruff format --check .
 | `--overfit` | off | Train and validate on one block |
 | `--dry-run` | off | Build the model, print the shape, exit |
 | `--device` | `auto` | `auto`, `cpu`, `cuda`, or `cuda:N`. `auto` takes the GPU when there is one |
+| `--out` | per stage | JSONL that `octlm.day2 variants` and `report` write and read |
+| `--seeds` | 3 | Seeds per variant in a grid stage |
+| `--probe-step` | 64 | Needle depths the Day 3 copy probe sweeps |
 
 ## Running on a GPU
 
@@ -144,9 +168,10 @@ Two stages are worth a GPU: `variants` and `length`. The rest of Day 2 measures 
 `sdpa` in particular reports process resident memory, which does not describe GPU allocation, so it
 stays on CPU until Phase 5 gives `bench.py` a device-aware memory field.
 
-`octlm.corpus` reads the Python standard library of the machine it runs on. A corpus built on Colab
-is not the corpus in `data/manifest.json`, so copy `data/` and `artifacts/day2/` across if the
-numbers need to line up with an earlier run.
+`octlm.corpus` reads the Python standard library of the machine it runs on, so the corpus belongs to
+the machine that trains. That is Colab now, and the fingerprints in `notes/day2.md` are the Colab
+ones. Check `data/manifest.json` against them before comparing a new run, because Colab upgrades its
+Python image without warning and a different image is a different corpus.
 
 ## What is in the repository
 
@@ -159,16 +184,23 @@ octlm/
   bench.py       forward-pass measurement and the frozen `octlm-bench-v1` record schema
   corpus.py      code and prose corpus builder, manifest with hashes and licenses
   day2.py        Day 2 experiment stages and the tiled attention sketch
+  day3.py        Day 3a experiment stages, the copy probe, and the cache arithmetic
 notebooks/octlm-colab.ipynb     GPU runs on Colab
 configs/day1.toml, configs/day2.toml, configs/day2-long.toml
-tests/test_day1.py, tests/test_day2.py
-notes/day1.md, notes/day2.md    research, decisions, measurements, failures, exit checks
+configs/day3.toml, configs/day3-long.toml
+tests/test_day1.py, tests/test_day2.py, tests/test_day3.py
+notes/day1.md, notes/day2.md, notes/day3.md    research, decisions, measurements, failures
 ```
 
 `model.py` carries both generations on one code path. Every Day 2 switch defaults to the Day 1
 behavior: `position` picks learned, sinusoidal, or rotary embeddings, `norm` picks LayerNorm or
 RMSNorm, `feed_forward` picks GELU or SwiGLU, `attention` picks the handwritten path or SDPA,
 `residual` picks pre-norm or post-norm, and `kv_heads` sets the grouped-query head count.
+
+Day 3a adds six more, all defaulting to the earlier behavior. `mtp_depth` adds multi-token
+prediction heads, `attention_window` and `attention_stride` narrow the causal mask,
+`kv_compress_block` mean-pools the keys and values outside that window, and `mla_rank` with
+`mla_rope_dim` switch attention to a low-rank latent cache with a decoupled RoPE key.
 
 Both tokenizers preserve input bytes exactly. Neither lowercases text nor normalizes Unicode. BPE
 learns merges from the training corpus only, breaks equal-frequency ties by token ID, and never
@@ -199,7 +231,8 @@ represented every byte of the same sample with no unknown token. A 2,048-entry B
 early at 1,708 entries, because no remaining pair occurred twice.
 
 A batch-one forward pass took 4.0 ms at 128 tokens and 115.2 ms at 2,048 tokens. Peak resident
-memory reached 504 MB. The largest verified Day 1 context is 2,048 tokens.
+memory reached 504 MB. The largest verified Day 1 context is 2,048 tokens. The same forward pass takes 9.1 ms
+at 2,048 tokens on a Colab T4.
 
 ## What Day 1 does not have
 
@@ -239,9 +272,48 @@ At 8192 tokens the flash kernel is 10.5x faster on 84x less memory growth. The m
 allocates the full score matrix, so its footprint grows quadratically. Bfloat16 is slower than
 float32 on this CPU at every length, which is the opposite of the GPU case.
 
-The corpus is 7.0 MB of training text and 0.9 MB held out, 60 percent Python standard library and 40
-percent public-domain books. A 2,048-entry BPE tokenizer trained on a tenth of it reaches 0.407
-tokens per byte, against 0.525 for the Day 1 tokenizer on the Day 1 corpus.
+The corpus is 6.9 MB of training text and 0.9 MB held out, 60 percent Python standard library and 40
+percent public-domain books, built on Colab from Python 3.13.15. A 2,048-entry BPE tokenizer trained
+on a tenth of it reaches 0.431 tokens per byte, against 0.525 for the Day 1 tokenizer on the Day 1
+corpus.
+
+The variant grid ran 8 architectures across 3 seeds, 400 steps each, on one T4 in 4 minutes. Bits per
+byte on held-out code, averaged over seeds, with the seed spread beside it:
+
+| Variant | Code bpb | Seed spread | Cache at 4K | Decision |
+| --- | ---: | ---: | ---: | --- |
+| baseline | 2.9339 | 0.0434 | 16 MiB | control |
+| swiglu | 2.8521 | 0.0085 | 16 MiB | keep |
+| rmsnorm | 2.9352 | 0.0390 | 16 MiB | keep only inside `modern` |
+| gqa-2 | 2.9449 | 0.0235 | 4 MiB | keep, the cache is the win |
+| post-norm | 3.9310 | 0.0047 | 16 MiB | revert |
+| modern | 2.8045 | 0.1194 | 4 MiB | best measured, not separated from `swiglu` |
+
+Read the spread before the gap. The baseline moves 0.043 bits per byte across three seeds with
+nothing else changed, so SwiGLU's 0.082 is the only single-component result outside the noise.
+
+On the length sweep, RoPE beats sinusoidal positions at every evaluation length, by 0.76 bits per
+byte at 2,048. Extrapolation past the 512-token training length degrades rather than collapses, 2.29
+at 2,048 against 2.90 at 8,192. Position interpolation pays only past 4x the trained length.
+
+## What Day 3a is measuring
+
+Nothing yet. The code is built and the checks pass, but no training stage has run.
+
+Day 2 closed by demanding a bigger step budget: its baseline moved 0.043 bits per byte across three
+seeds with nothing else changed, which swallowed every single-component result except SwiGLU's.
+`configs/day3.toml` is `configs/day2.toml` with the budget raised from 400 steps to 2000 and nothing
+else touched, so the Day 2 rows stay comparable. Stage 0 measures the new spread and freezes it as
+the minimum effect the day is allowed to claim.
+
+The cache arithmetic already runs, and it sets up EXP-019. At `d_model` 256 with 8 query heads and
+2 KV heads, the present cache holds 128 dimensions per token per layer. MLA holds `rank + rope_dim`,
+so it only undercuts GQA-2 below rank 112, against the 10x reductions the papers report for wide
+models. Block compression is the larger win here: at 4,096 tokens with a 128-token exact window,
+block 8 caches 624 positions instead of 4,096.
+
+Both hypotheses are written into `notes/day3.md` before the runs, along with the predicted negative
+for multi-token prediction at this size.
 
 ## What is coming
 

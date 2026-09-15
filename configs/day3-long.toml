@@ -1,0 +1,23 @@
+[model]
+context_length = 512
+d_model = 256
+n_heads = 8
+n_layers = 4
+ff_multiplier = 4
+dropout = 0.0
+attention = "sdpa"
+
+[training]
+seed = 1337
+batch_size = 8
+steps = 2000
+eval_interval = 250
+learning_rate = 0.0006
+min_learning_rate = 0.00006
+warmup_steps = 200
+weight_decay = 0.1
+grad_clip = 1.0
+
+[tokenizer]
+vocab_size = 2048
+min_frequency = 2

@@ -24,6 +24,12 @@ class ModelSettings:
     residual: str = "pre"
     kv_heads: int = 0
     rope_scale: float = 1.0
+    mtp_depth: int = 1
+    attention_window: int = 0
+    attention_stride: int = 0
+    kv_compress_block: int = 0
+    mla_rank: int = 0
+    mla_rope_dim: int = 0
 
 
 @dataclass(frozen=True)

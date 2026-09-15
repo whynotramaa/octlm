@@ -220,7 +220,7 @@ def _run_one(
     blocks: dict[str, TokenBlocks],
     dataset_hash: str,
     device: str | None = None,
-) -> dict[str, object]:
+) -> tuple[Decoder, dict[str, object]]:
     model, _, records = train_model(
         config, tokenizer, blocks["train"], blocks["validation"], dataset_hash, device=device
     )
@@ -240,7 +240,7 @@ def _run_one(
         measured = evaluate(model, blocks[kind], tokenizer.pad_id)
         result[f"{kind}_loss"] = measured["loss"]
         result[f"{kind}_bits_per_byte"] = measured["bits_per_byte"]
-    return result
+    return model, result
 
 
 def stage_variants(args: argparse.Namespace) -> None:
@@ -254,12 +254,13 @@ def stage_variants(args: argparse.Namespace) -> None:
         "prose": head(blocks_for(VALIDATION_SPLIT, tokenizer, length, "prose"), FINAL_BLOCKS),
     }
     dataset_hash = data_fingerprint([TRAIN_SPLIT, VALIDATION_SPLIT])
-    path = RUNS / "day2-variants.jsonl"
+    path = args.out or RUNS / "day2-variants.jsonl"
     selected = args.variants or list(VARIANTS)
     for name in selected:
         for seed in SEEDS[: args.seeds]:
             config = _variant_config(base, VARIANTS[name], seed)
-            _write(path, _run_one(name, config, tokenizer, blocks, dataset_hash, args.device))
+            _, record = _run_one(name, config, tokenizer, blocks, dataset_hash, args.device)
+            _write(path, record)
 
 
 def _length_evaluation(
@@ -330,9 +331,9 @@ def stage_cache(args: argparse.Namespace) -> None:
             )
 
 
-def stage_report(_: argparse.Namespace) -> None:
+def stage_report(args: argparse.Namespace) -> None:
     """Summarize the variant grid: mean and spread across seeds, in a stable order."""
-    path = RUNS / "day2-variants.jsonl"
+    path = args.out or RUNS / "day2-variants.jsonl"
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     for name in VARIANTS:
         group = [record for record in records if record["variant"] == name]
@@ -380,6 +381,7 @@ def main() -> None:
     parser.add_argument("--windows", type=int, default=8)
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, or cuda:N")
     parser.add_argument("--one", nargs=3, metavar=("BACKEND", "DTYPE", "LENGTH"))
+    parser.add_argument("--out", type=Path, help="JSONL for variant records")
     args = parser.parse_args()
     if not 1 <= args.seeds <= len(SEEDS):
         raise SystemExit(f"seeds must be between 1 and {len(SEEDS)}")

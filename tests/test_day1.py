@@ -187,7 +187,7 @@ class TrainingTests(unittest.TestCase):
                     train_model(config, tokenizer, blocks, blocks, "data", resume=checkpoint)
 
     def test_benchmark_schema_is_json_safe(self) -> None:
-        result = measure(8)
+        result = measure(8, torch.device("cpu"))
         self.assertEqual(json.loads(json.dumps(result, allow_nan=False)), result)
         self.assertEqual(result["schema"], "octlm-bench-v1")
 

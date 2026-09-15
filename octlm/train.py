@@ -105,6 +105,23 @@ def optimizer_for(model: nn.Module, config: ProjectConfig) -> torch.optim.AdamW:
     return torch.optim.AdamW(groups, lr=config.training.learning_rate, betas=(0.9, 0.95))
 
 
+def mtp_loss(model: Decoder, inputs: Tensor, targets: Tensor, pad_id: int) -> Tensor:
+    """Depth k predicts token t+k, so depth k reads targets shifted by k and loses k positions."""
+    depth = model.config.mtp_depth
+    if depth == 1:
+        logits = model(inputs)
+        return F.cross_entropy(logits.flatten(0, 1), targets.flatten(), ignore_index=pad_id)
+    stack = model(inputs, all_depths=True)
+    losses = []
+    for k, logits in enumerate(stack):
+        span = targets.shape[1] - k
+        shifted = targets[:, k:]
+        losses.append(
+            F.cross_entropy(logits[:, :span].flatten(0, 1), shifted.flatten(), ignore_index=pad_id)
+        )
+    return torch.stack(losses).mean()
+
+
 def evaluate(model: Decoder, blocks: TokenBlocks, pad_id: int) -> dict[str, float]:
     model.eval()
     device = next(model.parameters()).device
@@ -226,10 +243,7 @@ def train_model(
         inputs, targets, _ = train_blocks.batch(config.training.batch_size, generator)
         inputs, targets = inputs.to(target), targets.to(target)
         optimizer.zero_grad(set_to_none=True)
-        logits = model(inputs)
-        loss = F.cross_entropy(
-            logits.flatten(0, 1), targets.flatten(), ignore_index=tokenizer.pad_id
-        )
+        loss = mtp_loss(model, inputs, targets, tokenizer.pad_id)
         loss.backward()
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             model.parameters(), config.training.grad_clip

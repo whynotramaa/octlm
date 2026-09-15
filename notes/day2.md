@@ -1,7 +1,7 @@
 # Day 2: modern decoder core
 
-Status: research complete, code complete, EXP-014 measured, EXP-009 to EXP-013 and EXP-015 awaiting
-their measurement runs
+Status: complete. EXP-009 through EXP-015 are measured. The training runs moved to a Colab T4, and
+the corpus moved with them.
 Started: 2026-09-14
 Experiments: EXP-009 through EXP-015
 
@@ -193,6 +193,37 @@ Known limitations:
 Day 2 needs a corpus large enough to separate architectures. It does not need the final data mix, and
 the final mix stays a later experiment.
 
+### The corpus moved to Colab
+
+The development laptop overheats under a grid that saturates every core for an hour, so all training
+now runs on a Colab T4. `octlm/corpus.py` reads the standard library of the machine it runs on, and
+Colab ships Python 3.13.15 against the laptop's 3.14. The corpus therefore changed, and the Colab
+build is now the one every result below uses.
+
+| Split | Documents | Bytes | Code | Prose |
+| --- | ---: | ---: | ---: | ---: |
+| Train | 205 | 6,918,277 | 4,103,183 | 2,815,094 |
+| Validation | 23 | 860,062 | 466,611 | 393,451 |
+
+The train document fingerprint is `c6572704984dfd02662b080f8273bf0080be207f034c6edb8663cdfea89e01bc`
+and the validation fingerprint is
+`4a7bccfbfa637d50c94ad89611f491e087b049fffbed5a69980b88d5daa79c9d`. Check both in
+`data/manifest.json` before you compare a new run against the tables below. Colab upgrades its Python
+image without warning, and a different image is a different corpus.
+
+The Colab corpus is 1.7 percent smaller than the laptop corpus and holds the same 60 to 40 code and
+prose mix. The size is not the reason to prefer it. The reason is that the corpus should be built
+where the training runs, and every run from here is a Colab run.
+
+The 2048-entry tokenizer retrained on this corpus stops at the same 1787 merges and reaches 0.431
+tokens per byte, against 0.407 on the laptop corpus. Its fingerprint is
+`a2a18fe1e011f8c0cf774161f7fab5761f2e1aa0095ecae86ce0392d260af358`. Blocks at a 256-token context:
+11,508 training blocks and 1,528 validation blocks, of which 782 are code and 745 are prose. That is
+2.96M training tokens and 393K validation tokens.
+
+EXP-014 is unaffected. It measures attention kernels on random tensors, so it depends on no corpus
+and its CPU numbers stand.
+
 ### The Day 2 tokenizer
 
 Day 1 flagged that the BPE trainer recounts every pair after every merge. On 7 MB that cost blocks
@@ -282,7 +313,7 @@ HBM traffic the paper measures, and the direction of the argument is the part th
 Bfloat16 is slower than float32 on this CPU at every length. That is the opposite of the GPU case and
 worth remembering before Day 4 plans mixed precision.
 
-### EXP-013, KV cache bytes at the Day 2 shape. Measured, sweep pending.
+### EXP-013, KV cache bytes at the Day 2 shape. Measured.
 
 Four layers, model width 256, 8 query heads, head width 32, bfloat16, batch 1, from
 `kv_cache_bytes`.
@@ -294,23 +325,96 @@ Four layers, model width 256, 8 query heads, head width 32, bfloat16, batch 1, f
 | 2 | 1 MiB | 4 MiB |
 | 1 | 0.5 MiB | 2 MiB |
 
-The quality side of this experiment is the sweep, and the sweep has not run.
+The quality side of this experiment is the sweep, and the sweep now sits in the variant grid below.
+Keeper choice: two KV heads. It cuts the 4K cache from 16 MiB to 4 MiB and its quality difference
+against the baseline is 0.011 bits per byte on code, well inside the 0.043 seed spread the baseline
+itself shows. One KV head cuts the cache to 2 MiB at the same measured quality, and the GQA paper's
+ROUGE table is the reason we do not take it: the MQA penalty appears as the model grows, and a
+400-step run at width 256 cannot resolve it.
 
-### EXP-010 to EXP-013 and EXP-015, the variant grid. Incomplete.
+### EXP-010 to EXP-013 and EXP-015, the variant grid. Measured.
 
-The grid trains 8 architectures across 3 seeds. It ran for 6 minutes and finished 2 of 24 runs before
-we stopped it, so these two rows are a cost measurement, not a result.
+Eight architectures, three seeds each, 400 steps at a 256-token context on one Colab T4. Bits per
+byte on the held-out code and prose splits, averaged over seeds, with the spread across seeds in the
+next column. Lower is better.
 
-| Variant | Seed | Code loss | Prose loss | Seconds per step |
-| --- | ---: | ---: | ---: | ---: |
-| baseline | 1337 | 4.3506 | 3.8371 | 0.235 |
-| baseline | 1338 | 4.2973 | 3.8325 | 0.270 |
+| Variant | Parameters | KV heads | Cache at 4K | Code bpb | Code spread | Prose bpb | Prose spread | Seconds per step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 3,740,160 | 8 | 16 MiB | 2.9339 | 0.0434 | 2.6998 | 0.0038 | 0.0196 |
+| rmsnorm | 3,737,856 | 8 | 16 MiB | 2.9352 | 0.0390 | 2.7004 | 0.0031 | 0.0213 |
+| swiglu | 3,731,968 | 8 | 16 MiB | 2.8521 | 0.0085 | 2.6802 | 0.0074 | 0.0218 |
+| post-norm | 3,740,160 | 8 | 16 MiB | 3.9310 | 0.0047 | 3.3995 | 0.0096 | 0.0209 |
+| gqa-4 | 3,478,016 | 4 | 8 MiB | 2.8997 | 0.0262 | 2.6915 | 0.0077 | 0.0244 |
+| gqa-2 | 3,346,944 | 2 | 4 MiB | 2.9449 | 0.0235 | 2.7022 | 0.0119 | 0.0241 |
+| mqa-1 | 3,281,408 | 1 | 2 MiB | 2.9288 | 0.0261 | 2.6992 | 0.0205 | 0.0236 |
+| modern | 3,270,912 | 2 | 4 MiB | 2.8045 | 0.1194 | 2.5906 | 0.0429 | 0.0275 |
 
-Two seeds of one architecture already show the reason the plan asks for three. The code loss moves by
-0.053 between seeds with nothing else changed. Any architecture claim smaller than that gap is noise,
-and the RMSNorm literature predicts a speed change, not a loss change.
+The 24 runs took 249 seconds of training and evaluation on the T4. The same grid was measured at
+0.235 to 0.270 seconds per step on the laptop, so the GPU is about 11x faster per step and turns a
+50-minute grid into a 4-minute one.
 
-### EXP-009, the length sweep. Not run.
+Read the spread column before any gap. The baseline moves 0.0434 bits per byte on code across three
+seeds with nothing else changed, so a gap smaller than that is noise at this budget.
+
+**EXP-010, RMSNorm. Keep inside `modern`, not on its own.** The quality difference against the
+baseline is 0.0013 on code and 0.0006 on prose, which is two orders of magnitude inside the seed
+spread. RMSNorm also costs 8.9 percent more step time here, the opposite of the 6.9 to 9.3 percent
+speedup the paper reports on a Transformer. The reason is that PyTorch fuses its LayerNorm kernel
+and our RMSNorm is plain tensor operations, and at width 256 the norm is a large share of the block.
+Re-measure at width 512 and above before treating the speed result as general.
+
+**EXP-011, SwiGLU. Keep.** It improves code by 0.082 and prose by 0.020 bits per byte at matched
+parameter count, and the code gain is twice the baseline seed spread. It costs 11 percent more step
+time. This is the only single-component swap in the grid that moves quality outside the noise.
+
+**EXP-012 and EXP-013, grouped-query attention. Keep at two KV heads.** All three head counts land
+inside the seed spread on quality: gqa-4 is 0.034 better on code, gqa-2 is 0.011 worse, mqa-1 is
+0.005 better. None of that is a signal. All three are 20 to 24 percent slower per training step than
+MHA, because `enable_gqa` broadcasts the key and value heads across their group and training never
+reads a cache. The payoff is decode memory, and it is exact: 4 MiB against 16 MiB at 4K positions.
+
+**EXP-015, post-norm. Revert.** It is 1.00 bits per byte worse on code and 0.70 worse on prose, at
+identical parameter count and no speed benefit. Four layers with warmup is the regime where the
+pre-norm paper says post-norm still trains, and it trains, badly. The Day 1 pre-norm placement stays.
+
+**The `modern` stack. Best measured, not yet separated.** RoPE, RMSNorm, SwiGLU, and two KV heads
+together give the best code and prose numbers in the grid on a quarter of the baseline cache. Its
+0.047 margin over `swiglu` on code is smaller than its own 0.119 seed spread, so this grid ranks the
+two and does not separate them. Separating them needs steps, not seeds. At 3.27M parameters and 2.96M
+training tokens the model sees roughly one token per parameter, against the 20 that Chinchilla-style
+scaling suggests, so every architecture here is measured deep in the undertrained regime.
+
+### EXP-009, the length sweep. Keep RoPE. Interpolate only past 4x.
+
+Two models trained at a 512-token context, one with sinusoidal positions and one with RoPE, then
+evaluated on held-out text at five lengths. Bits per byte, lower is better. The interpolated column
+divides position indices by the evaluation length over 512.
+
+| Evaluation length | Sinusoidal | RoPE | RoPE interpolated | RoPE scale |
+| ---: | ---: | ---: | ---: | ---: |
+| 512 | 3.3687 | 2.8083 | 2.8083 | 1.0 |
+| 1024 | 3.2752 | 2.5340 | 2.5651 | 2.0 |
+| 2048 | 3.0565 | 2.2924 | 2.3330 | 4.0 |
+| 4096 | 3.5159 | 2.4929 | 2.5141 | 8.0 |
+| 8192 | 4.1394 | 2.9023 | 2.8701 | 16.0 |
+
+RoPE beats sinusoidal at every length, by 0.76 bits per byte at 2048. Both curves improve from 512 to
+2048, because a longer window gives each prediction more context and the padding share falls, and
+both turn back up after 4096.
+
+The Position Interpolation paper predicts that raw extrapolation fails past the trained length.
+Ours degrades rather than collapses: 2.29 at 2048 against 2.90 at 8192, which is 4x and 16x the
+trained length. Nothing here approaches the 10^3 perplexity the paper reports, and the reason is
+that our trained length is 512, not 2048, so the absolute distances stay small.
+
+Interpolation earns its place only at 8192, where it gives back 0.032 bits per byte. At 1024, 2048,
+and 4096 it costs 0.02 to 0.04. Dividing positions by the length ratio compresses the rotation
+angles, and compressing them below what the model saw in training is a loss when extrapolation was
+still working. The rule this gives us: apply interpolation past 4x the trained length, not before,
+and re-check the crossover after any change to the trained context.
+
+The paper's other half, 1000 fine-tuning steps at the longer length, is not tested here and belongs
+to Phase 4.
 
 ## Conflicts with the plans
 
@@ -329,48 +433,59 @@ and the RMSNorm literature predicts a speed change, not a loss change.
 5. Day 1 recorded that bfloat16 would be a Day 4 concern. EXP-014 shows bfloat16 is slower than
    float32 for attention on this CPU, so Day 4 should treat mixed precision as a GPU-only win until
    measured otherwise.
+6. The RMSNorm paper reports a 6.9 to 9.3 percent speedup on a Transformer. EXP-010 measures 8.9
+   percent slower at width 256 on a T4, because PyTorch fuses its LayerNorm kernel and our RMSNorm
+   is plain tensor operations. The paper's claim is about arithmetic saved. Ours is about which
+   kernel the framework has. Both can be true, and the one that decides our config is the kernel.
+7. `PLAN.md` assumes a CPU-only lab. Day 2 ends that: the laptop overheats under an hour-long grid,
+   so training moved to a Colab T4 and the corpus moved with it.
 
 ## Operating constraint
 
-This is a single development machine with 12 logical CPUs, and a training grid saturates all of them
-for the better part of an hour. Long runs need the owner's go-ahead before they start. The commands
-below carry their measured cost so that the decision is informed. Short checks, meaning the test
-suite, the linters, and a dry run, stay unrestricted.
+Training does not run on the laptop. A grid saturates all 12 logical CPUs for the better part of an
+hour and the machine overheats, so every training run goes to a Colab T4 through
+`notebooks/octlm-colab.ipynb` or the `colab-mcp` bridge. The laptop keeps the short checks: the test
+suite, the linters, a dry run, and the corpus-independent stages `tiled`, `equivalence`, `sdpa`,
+`cache`, and `report`.
+
+`sdpa` stays on the laptop on purpose. It reports process resident memory, which does not describe
+GPU allocation, so running it on the T4 would produce a number that looks like a measurement and is
+not one.
 
 ## Commands
 
-Completed:
+Every entry point takes `--device`, which defaults to `auto` and takes the GPU when the machine has
+one. The costs below are measured, laptop rows on 12 CPUs and Colab rows on one T4 with Python
+3.13.15 and PyTorch 2.11.0+cu128.
+
+On the laptop:
 
 ```sh
-uv run python -m octlm.corpus                 # 30 s, downloads six books once
 uv run python -m octlm.day2 tiled             # 5 s
 uv run python -m octlm.day2 equivalence       # 5 s
 uv run python -m octlm.day2 sdpa              # 2 min, one process per measurement
 uv run python -m octlm.day2 cache             # instant
+uv run python -m octlm.day2 report            # instant, reads runs/day2-variants.jsonl
 uv run python -m unittest                     # 33 tests, under a second
 uv run ruff check . && uv run ruff format --check .
 ```
 
-Still to run, with measured costs on this machine:
+On Colab, after cloning the repository into the VM:
 
 ```sh
-# EXP-010 to EXP-013, EXP-015. 24 runs, about 2 min each, roughly 50 min at full CPU.
-uv run python -m octlm.day2 variants
-
-# The same grid at one seed. 8 runs, roughly 16 min. Enough to rank the variants,
-# not enough to defend a gap smaller than the 0.053 seed spread above.
-uv run python -m octlm.day2 variants --seeds 1
-
-# EXP-009. Two trainings at a 512-token context plus evaluations out to 8192,
-# roughly 15 min.
-uv run python -m octlm.day2 length --config configs/day2-long.toml
-
-# Summarize the grid once it exists. Instant.
-uv run python -m octlm.day2 report
+python -m octlm.corpus                        # 40 s, downloads six books once
+python -m octlm.day2 variants --device cuda   # 24 runs, 4 min of training
+python -m octlm.day2 length --config configs/day2-long.toml --device cuda   # 2 trainings, 2 min
 ```
 
-The first grid run rebuilds nothing. The tokenizer and the token blocks are cached under
-`artifacts/day2/`.
+The first Colab stage of a session pays a one-time cost the timings above exclude. Training the
+tokenizer on every tenth document and encoding the corpus into blocks takes about 5 minutes of
+single-core Python, and the results cache under `artifacts/day2/`. The VM is deleted between
+sessions, so that cost returns every session unless you copy `data/` and `artifacts/day2/` out to
+Drive and back.
+
+Run a long stage with `subprocess.Popen` into a log file rather than as a foreground cell. A cell
+driven over the Colab MCP bridge has a 30-second tool timeout, and a 4-minute cell will hit it.
 
 ## Exit check
 
@@ -379,9 +494,15 @@ The first grid run rebuilds nothing. The tokenizer and the token blocks are cach
 - [x] SDPA matches the Day 1 handwritten attention at every KV-head count.
 - [x] You can derive KV cache bytes for any head count without notes.
 - [x] Every Day 2 component has a test that fails if its defining property breaks.
-- [ ] RoPE, RMSNorm, SwiGLU, and GQA each have a measured result against the baseline.
-- [ ] The KV-head sweep has a defended keeper choice with cache, loss, and throughput numbers.
-- [ ] Every experiment records a keep or revert decision, including the failures.
+- [x] RoPE, RMSNorm, SwiGLU, and GQA each have a measured result against the baseline.
+- [x] The KV-head sweep has a defended keeper choice with cache, loss, and throughput numbers.
+- [x] Every experiment records a keep or revert decision, including the failures.
 
-Day 2 is not complete. The code, the corpus, the tests, and EXP-014 are done. The remaining
-experiments need the grid and the length sweep, and those runs need the machine.
+Day 2 is complete. Keep RoPE, SwiGLU, and two KV heads. Revert post-norm. RMSNorm rides with the
+`modern` stack and has not earned a standalone place at this width.
+
+What the day did not settle: whether `modern` beats `swiglu` alone. Its margin is 0.047 bits per byte
+on code and its seed spread is 0.119. The M2 milestone asks for one `modern-50M` config that beats
+the Generation 0 baseline on perplexity and decode speed at equal parameter count, and a 400-step run
+at 3.3M parameters cannot answer that. Day 3 should raise the step budget before it adds another
+component, because every gap this grid measured except SwiGLU's sits inside the noise.
