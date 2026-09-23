@@ -50,9 +50,9 @@ fine-tune did something measurable.
 
 - The laptop runs code edits, tests, dry runs, and short CPU checks. It does not train, because it
   overheats under long all-core load.
-- Colab Pro, since 2026-09-23, runs training, the Qwen parity check, and eval runs. The runtime is
-  a T4, an L4, or an A100. The trainer uses bfloat16 where the GPU supports it and float16 with
-  `torch.amp.GradScaler` on a T4.
+- Colab Pro, since 2026-09-23, runs training, the Qwen parity check, and eval runs on a T4. The
+  account also offers a TPU v5e-1, which octlm does not use. `notes/day4.md` explains why. The T4
+  has no bfloat16, so training uses float16 with `torch.amp.GradScaler`.
 - Kaggle notebooks run anything longer than a Colab session survives. The free quota and background
   execution are leads to verify in EXP-066.
 - A rented GPU is for a run that blocks a decision, with the blocking evidence in the

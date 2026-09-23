@@ -17,9 +17,15 @@ Nothing trained carries over. The user moved to a new Colab account with a Pro s
 The Day 2 corpus and grid belong to the first plan, Day 3a never ran, and Day 5 remeasures the
 comparisons at the new scale. The Day 2 numbers stay in `notes/day2.md` as the record.
 
-Colab Pro changes the hardware assumption in `PLAN.md`. The runtime can be a T4, an L4, or an A100.
-The L4 and the A100 support bfloat16. The T4 does not. The trainer picks the dtype from the device,
-so the same command runs on all three. Every training record carries the `dtype` that ran.
+The new Colab Pro account offers two accelerators: a T4 GPU and a TPU v5e-1. No L4 or A100. We
+train on the T4, which has no bfloat16, so the trainer uses float16 with `GradScaler`. Every
+training record carries the `dtype` that ran.
+
+We rejected the TPU for Day 4. PyTorch reaches a TPU through `torch_xla`, and octlm's device
+selection, autocast, `GradScaler`, SDPA kernel choice, and checkpoint saving are all written for
+CUDA or CPU. The port would cost more time than it saves on a run estimated at 70 to 180 minutes,
+and no later day needs a TPU. On the T4, SDPA uses the memory-efficient kernel, because
+FlashAttention needs an sm80 or newer GPU.
 
 ## What we read
 
