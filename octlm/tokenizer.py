@@ -200,18 +200,29 @@ class ByteBPETokenizer:
             for rank, (left, right, token_id) in enumerate(self.merges)
         }
 
-    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+    @cached_property
+    def chunk_cache(self) -> dict[bytes, tuple[int, ...]]:
+        return {}
+
+    def encode_chunk(self, chunk: bytes) -> tuple[int, ...]:
         ranks = self.merge_ranks
+        sequence = tuple(chunk)
+        while len(sequence) > 1:
+            candidates = (pair for pair in _pairs(sequence) if pair in ranks)
+            pair = min(candidates, key=lambda item: ranks[item][0], default=None)
+            if pair is None:
+                break
+            sequence = _merge(sequence, pair, ranks[pair][1])
+        return sequence
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        cache = self.chunk_cache
         output: list[int] = []
         for chunk in pretokenize(text):
-            sequence = tuple(chunk)
-            while len(sequence) > 1:
-                candidates = (pair for pair in _pairs(sequence) if pair in ranks)
-                pair = min(candidates, key=lambda item: ranks[item][0], default=None)
-                if pair is None:
-                    break
-                sequence = _merge(sequence, pair, ranks[pair][1])
-            output.extend(sequence)
+            token_ids = cache.get(chunk)
+            if token_ids is None:
+                token_ids = cache[chunk] = self.encode_chunk(chunk)
+            output.extend(token_ids)
         return [self.bos_id, *output, self.eos_id] if add_special_tokens else output
 
     def decode(

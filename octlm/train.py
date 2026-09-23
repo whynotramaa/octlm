@@ -165,6 +165,7 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer,
     generator: torch.Generator,
     expected: dict[str, str],
+    scaler: torch.amp.GradScaler | None = None,
 ) -> int:
     try:
         state = torch.load(path, map_location="cpu", weights_only=False)
@@ -180,6 +181,8 @@ def load_checkpoint(
     random.setstate(state["python_rng"])
     torch.set_rng_state(state["torch_rng"])
     generator.set_state(state["sampler_rng"])
+    if scaler is not None:
+        scaler.load_state_dict(state.get("scaler", {}))
     return int(state["step"])
 
 
@@ -191,6 +194,7 @@ def checkpoint_state(
     config: ProjectConfig,
     tokenizer: Tokenizer,
     dataset_hash: str,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> dict[str, object]:
     return {
         "config_hash": config.fingerprint,
@@ -200,6 +204,7 @@ def checkpoint_state(
         "optimizer": optimizer.state_dict(),
         "python_rng": random.getstate(),
         "sampler_rng": generator.get_state(),
+        "scaler": scaler.state_dict() if scaler else {},
         "step": step,
         "tokenizer_hash": tokenizer.fingerprint,
         "tokens_processed": step * config.training.batch_size * config.model.context_length,
@@ -218,6 +223,7 @@ def train_model(
     resume: Path | None = None,
     metrics_path: Path | None = None,
     device: str | None = None,
+    mixed_precision: bool = False,
 ) -> tuple[Decoder, torch.optim.AdamW, list[dict[str, float | int | str]]]:
     random.seed(config.training.seed)
     torch.manual_seed(config.training.seed)
@@ -225,12 +231,16 @@ def train_model(
     target = resolve_device(device)
     model = Decoder(decoder_config(config, _vocab_size(tokenizer))).to(target)
     optimizer = optimizer_for(model, config)
+    dtype = autocast_dtype(target) if mixed_precision else None
+    scaler = torch.amp.GradScaler("cuda", enabled=dtype == torch.float16)
     expected = {
         "config_hash": config.fingerprint,
         "data_hash": dataset_hash,
         "tokenizer_hash": tokenizer.fingerprint,
     }
-    start_step = load_checkpoint(resume, model, optimizer, generator, expected) if resume else 0
+    start_step = (
+        load_checkpoint(resume, model, optimizer, generator, expected, scaler) if resume else 0
+    )
     final_step = min(stop_after or config.training.steps, config.training.steps)
     records: list[dict[str, float | int | str]] = []
     started = time.perf_counter()
@@ -243,17 +253,21 @@ def train_model(
         inputs, targets, _ = train_blocks.batch(config.training.batch_size, generator)
         inputs, targets = inputs.to(target), targets.to(target)
         optimizer.zero_grad(set_to_none=True)
-        loss = mtp_loss(model, inputs, targets, tokenizer.pad_id)
-        loss.backward()
+        with torch.autocast(target.type, dtype=dtype, enabled=dtype is not None):
+            loss = mtp_loss(model, inputs, targets, tokenizer.pad_id)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             model.parameters(), config.training.grad_clip
         )
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         train_seconds += time.perf_counter() - tick
         if (step + 1) % config.training.eval_interval == 0 or step + 1 == final_step:
             validation = evaluate(model, validation_blocks, tokenizer.pad_id)
             record: dict[str, float | int | str] = {
                 "device": str(target),
+                "dtype": str(dtype or torch.float32),
                 "elapsed_seconds": time.perf_counter() - started,
                 "gradient_norm": float(gradient_norm),
                 "learning_rate": rate,
@@ -269,14 +283,27 @@ def train_model(
                 metrics_path.parent.mkdir(parents=True, exist_ok=True)
                 with metrics_path.open("a") as file:
                     file.write(_json(record) + "\n")
-    if checkpoint:
-        save_checkpoint(
-            checkpoint,
-            checkpoint_state(
-                model, optimizer, generator, final_step, config, tokenizer, dataset_hash
-            ),
-        )
+            if checkpoint:
+                save_checkpoint(
+                    checkpoint,
+                    checkpoint_state(
+                        model,
+                        optimizer,
+                        generator,
+                        step + 1,
+                        config,
+                        tokenizer,
+                        dataset_hash,
+                        scaler,
+                    ),
+                )
     return model, optimizer, records
+
+
+def autocast_dtype(device: torch.device) -> torch.dtype | None:
+    if device.type != "cuda":
+        return None
+    return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
 
 def _vocab_size(tokenizer: Tokenizer) -> int:

@@ -1,5 +1,9 @@
 # Day wise reading schedule
 
+`PLAN.md` changed on 2026-09-23. Days 1 and 2 below match the work done. Days 3 to 8 cover the
+first plan, and most of their topics were dropped. Each new day lists its reading in its own note.
+`notes/day3.md` records the change.
+
 ## How to use this file
 
 This is a reading and understanding plan, not a build plan. It covers every concept in `PLAN.md` in 8 days. Each day assumes 6 to 8 hours with breaks. Each day ends with an exit check. If you fail the exit check, repeat the day before moving on.

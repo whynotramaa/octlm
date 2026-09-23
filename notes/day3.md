@@ -1,6 +1,6 @@
 # Day 3a: multi-token prediction and the attention variants
 
-Status: in progress.
+Status: stopped on 2026-09-23 before any GPU run. The plan changed. See the last section.
 Started: 2026-09-15
 Experiments: EXP-016 through EXP-019
 
@@ -284,3 +284,123 @@ backend. This is the same trap `notes/day2.md` recorded for process RSS on a GPU
 - [ ] The copy probe produces a depth curve for full, windowed, and compressed attention.
 - [ ] MLA has cache dimensions per rank against the GQA-2 control, and the crossover rank is named.
 - [ ] Every component that lost is still in the note with its numbers and its reason.
+
+## Session on 2026-09-23: the plan changes
+
+### What happened
+
+No Day 3a stage ran. Before the Stage 0 runs, the user asked whether the project was on the right
+track, and then whether to continue it or fine-tune a Qwen model instead. The user's goal, in their
+words, is to learn ML "in depth" for placement season and to end with "a harness that can control
+my own model". The user approved a rewrite of `PLAN.md` around that goal.
+
+### The problem, from our own numbers
+
+The Day 2 grid trained models of about 3.3M parameters for 400 steps at batch 8 and 256-token
+context. That is 819,200 tokens per run. `configs/day3.toml` raises it to 2000 steps, which is
+4,096,000 tokens for a 3,740,160-parameter model. `configs/day3-long.toml` reaches 8,192,000 tokens.
+The Day 2 corpus holds only 2.96M training tokens, so longer runs repeat data.
+
+Hoffmann et al. put the compute-optimal budget near 20 tokens per parameter, about 75M tokens for
+the Day 3 model. Day 2 ran at about 0.25 tokens per parameter and Day 3 would have run at about 1.1.
+The 0.043 bits-per-byte seed spread that blocked Day 2 is what an undertrained model looks like.
+Stage 0 would have measured it again at a budget that is still about 18x too small.
+
+The second problem is the goal. No model we can pretrain on free Colab will follow instructions or
+emit reliable tool calls, and the harness needs both.
+
+### Decision
+
+Keep the from-scratch track and train it once at a readable budget, about 20M parameters on
+TinyStories. Then load a small Qwen instruct model into `octlm/model.py`, which already has the same
+RoPE, RMSNorm, SwiGLU, and grouped-query attention blocks. Write LoRA in octlm, fine-tune Qwen for
+tool calls, and build the harness and its eval around it. `PLAN.md` now holds Days 4 to 9.
+
+We considered two alternatives and rejected both.
+
+- Continue the first plan. It spends the remaining time on variants the harness never uses, and it
+  ends with a model too weak to drive a harness.
+- Fine-tune Qwen with an off-the-shelf trainer and drop octlm. It gives the harness a working model
+  but leaves nothing to defend when an interviewer asks how attention, the KV cache, or LoRA work.
+
+### Sources
+
+These come from the planning conversation, not from pages fetched in this session. Each one is a
+lead until the day that depends on it fetches and confirms it.
+
+- [Hoffmann et al., Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556)
+  puts the compute-optimal budget near 20 tokens per parameter. This sets the EXP-067 budget.
+- [Eldan and Li, TinyStories](https://arxiv.org/abs/2305.07759) reports coherent English from models
+  under about 30M parameters trained on a synthetic dataset of simple stories. This picks the Day 4
+  data.
+- [Hu et al., LoRA](https://arxiv.org/abs/2106.09685) adds a trainable low-rank update with one
+  factor initialized to zero. This gives EXP-080 its step-0 parity test.
+- [Qwen3 Technical Report](https://arxiv.org/abs/2505.09388) describes dense models from 0.6B
+  parameters with grouped-query attention, SwiGLU, RoPE, RMSNorm, and QK-norm. This makes Day 6
+  possible without a second model file.
+- The NVIDIA T4 is a Turing card with float16 tensor cores and no bfloat16 support. This sets
+  float16 with `GradScaler` in EXP-066, and it conflicts with the bfloat16 plan in `day-wise.md`
+  Day 4.
+- Kaggle's free GPU quota, about 30 hours a week with background execution, is a lead for runs
+  longer than a Colab session. EXP-066 checks it.
+
+### Where each first-plan experiment went
+
+| First plan | Now |
+| --- | --- |
+| Stage 0 noise floor | Replaced by EXP-069 at the new scale |
+| EXP-016 multi-token prediction | Code kept. Runs as EXP-070 |
+| EXP-017 sparse attention | Code kept behind default-off flags. Not scheduled |
+| EXP-018 compressed attention and copy probe | Code kept behind default-off flags. Not scheduled |
+| EXP-019 MLA | Code kept behind default-off flags. Not scheduled |
+| EXP-020 to EXP-025, MoE, combined run, asymmetric compute, Muon, mHC | Dropped |
+| EXP-026 mixed precision | EXP-066, float16 only |
+| EXP-027 to EXP-029, batch size, schedule, checkpointing | Folded into EXP-066 and EXP-067 where the run needs them |
+| EXP-030 scaling check | Dropped |
+| EXP-031 to EXP-034, DDP, FSDP, tensor and pipeline parallelism | Dropped. One GPU |
+| EXP-035 and EXP-036, naive generation and KV cache | EXP-071, then EXP-076 on Qwen |
+| EXP-037 and EXP-038, prefill split and `torch.compile` | Folded into EXP-071 and EXP-076 if time allows |
+| EXP-039 quantization | EXP-072, int8 only |
+| EXP-040 to EXP-042, batching, prefix cache, speculative decoding | Dropped. Cache reuse across turns lives in EXP-078 |
+| EXP-043 SFT | EXP-082 |
+| EXP-044 LoRA | EXP-080 |
+| EXP-045 and EXP-046, DPO and reward model | Dropped |
+| EXP-047 and EXP-048, GRPO and RLVR | Day 9 option |
+| EXP-049 to EXP-053, evals and regression gate | Replaced by the EXP-079 harness eval and bits per byte |
+| EXP-054 task classifier | Dropped |
+| EXP-055 and EXP-056, hybrid retrieval | Dropped. The harness has a `grep` tool |
+| EXP-057 tool loop | EXP-078 |
+| EXP-058 tool-call fine-tune | EXP-081 and EXP-082 |
+| EXP-059 writing path, EXP-060 cache stack | Dropped |
+| EXP-061 router and cost log | Day 9 option |
+| EXP-062 to EXP-064, long context, stability run, model card | Dropped |
+
+New numbers start at EXP-065, so no retired number means two things.
+
+### Conflicts with the rules
+
+1. `AGENTS.md` forbids starting Day 4 before every Day 3 exit check passes. None of them pass. The
+   user's request outranks the plan, so the Day 3a checks above are withdrawn, not failed. Day 4
+   starts from Day 2's passed checks.
+2. `AGENTS.md` says to learn BPE merges from our training data only. Qwen's tokenizer ships with its
+   weights. The rule keeps applying to every tokenizer octlm trains. For Qwen, EXP-075 applies the
+   hash check instead, on `tokenizer.json`.
+3. `day-wise.md` is a reading schedule for the first plan. Days 1 and 2 match the work done. Days 3
+   to 8 cover topics the new plan dropped. The file now says so at the top, and each new day lists
+   its reading in its own note.
+
+### What changed in the repository
+
+- `PLAN.md` was rewritten around Days 4 to 9.
+- `README.md` now describes the new goal, status, and roadmap.
+- `day-wise.md` gained a note at the top on which days still apply.
+- No code changed. The Day 3a code, configs, and tests stay as they were.
+- `octlm.train` and `octlm.tokenizer` default to `PLAN.md` as training text and `day-wise.md` as
+  held-out text. Both files changed, so a Day 1 command run now trains on different text. The Day 1
+  numbers belong to the versions at commit `ab0d49c`. No test reads either file.
+
+### Exit check for this session
+
+- [x] The reason for the change is recorded with our own numbers.
+- [x] Every first-plan experiment has a new number or a reason it was dropped.
+- [x] Every conflict with `AGENTS.md` and `day-wise.md` is recorded.

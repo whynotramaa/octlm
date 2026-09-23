@@ -429,14 +429,36 @@ class Decoder(nn.Module):
         return torch.stack([logits, *(self.lm_head(a(hidden)) for a in self.mtp_adapters)])
 
     @torch.inference_mode()
-    def generate(self, token_ids: Tensor, max_new_tokens: int) -> Tensor:
+    def generate(
+        self,
+        token_ids: Tensor,
+        max_new_tokens: int,
+        temperature: float = 0.0,
+        top_k: int = 0,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
         if token_ids.ndim != 2 or token_ids.shape[0] != 1:
             raise ValueError("generation accepts one sequence")
+        if temperature < 0 or top_k < 0:
+            raise ValueError("temperature and top_k must not be negative")
         for _ in range(max_new_tokens):
             context = token_ids[:, -self.config.context_length :]
-            next_token = self(context)[:, -1].argmax(dim=-1, keepdim=True)
+            logits = self(context)[:, -1].float()
+            next_token = sample_token(logits, temperature, top_k, generator)
             token_ids = torch.cat((token_ids, next_token), dim=1)
         return token_ids
+
+
+def sample_token(
+    logits: Tensor, temperature: float, top_k: int, generator: torch.Generator | None
+) -> Tensor:
+    if temperature == 0:
+        return logits.argmax(dim=-1, keepdim=True)
+    if top_k:
+        cutoff = logits.topk(min(top_k, logits.shape[-1]), dim=-1).values[:, -1:]
+        logits = logits.masked_fill(logits < cutoff, float("-inf"))
+    probabilities = torch.softmax(logits / temperature, dim=-1)
+    return torch.multinomial(probabilities.cpu(), 1, generator=generator).to(logits.device)
 
 
 def parameter_count(model: nn.Module) -> int:

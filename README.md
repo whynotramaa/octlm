@@ -1,11 +1,12 @@
 # octlm
 
-A small language-model engineering lab. The goal is to rebuild the LLM engineering stack from
-scratch at 20M to 150M parameters, measure every change against a baseline, and end with a local
-coding and writing assistant. `PLAN.md` defines the product and its 64 numbered experiments.
-`day-wise.md` defines the reading order. `AGENTS.md` defines the working rules.
+A small language-model engineering lab. It builds a decoder from scratch and trains it properly at
+about 20M parameters. Then it loads a small Qwen instruct model into the same code, fine-tunes it
+with a LoRA written here, and builds an agent harness that runs the model with tools. Every change
+is measured against a baseline. `PLAN.md` defines the roadmap. `AGENTS.md` defines the working rules.
 
-The small model is the lab, not the product. Nothing here chases frontier capability.
+The plan changed on 2026-09-23. The first plan aimed to pretrain 50M to 150M models into a local
+assistant. `notes/day3.md` records why it stopped and where each of its experiments went.
 
 ## Status
 
@@ -17,9 +18,11 @@ Day 2 is complete: EXP-009 through EXP-015. RoPE, SwiGLU, and two KV heads are k
 reverted, and RMSNorm is quality-neutral at this width. Training moved to a Colab T4, because the
 laptop overheats under an hour-long grid.
 
-Day 3a is in progress: EXP-016 through EXP-019. Multi-token prediction, sliding-window and strided
-attention, block-compressed KV, and MLA are built, tested, and waiting on GPU time. Nothing is
-measured yet. EXP-020 through EXP-025, the MoE and optimizer half, is Day 3b.
+Day 3a stopped on 2026-09-23 before any GPU run: EXP-016 through EXP-019. Multi-token prediction,
+sliding-window and strided attention, block-compressed KV, and MLA are built and tested behind flags
+that default off. Multi-token prediction runs again as EXP-070. The others are not scheduled.
+
+Day 4 is next: TinyStories, float16 training on a T4, and one properly trained 20M model.
 
 Read `notes/day1.md`, `notes/day2.md`, and `notes/day3.md` for the research sources, the
 measurements, and every keep-or-revert decision.
@@ -125,6 +128,17 @@ uv run python -m octlm.day3 mla --config configs/day3-long.toml          # EXP-0
 uv run python -m octlm.day3 report
 ```
 
+Run Day 4 on a GPU. `notebooks/octlm-colab.ipynb` runs the same stages with Drive persistence.
+`prepare` downloads 2.2 GB and encodes it once. `train` resumes from `--checkpoint` when the file
+exists:
+
+```sh
+python -m octlm.day4 prepare                       # EXP-065
+python -m octlm.day4 train                         # EXP-066 and EXP-067
+python -m octlm.day4 samples --temperature 0       # EXP-068, greedy
+python -m octlm.day4 samples                       # EXP-068, temperature 0.8, top-k 40
+```
+
 Run the checks:
 
 ```sh
@@ -185,11 +199,12 @@ octlm/
   corpus.py      code and prose corpus builder, manifest with hashes and licenses
   day2.py        Day 2 experiment stages and the tiled attention sketch
   day3.py        Day 3a experiment stages, the copy probe, and the cache arithmetic
+  day4.py        TinyStories download, token files, the Day 4 training run, and samples
 notebooks/octlm-colab.ipynb     GPU runs on Colab
 configs/day1.toml, configs/day2.toml, configs/day2-long.toml
-configs/day3.toml, configs/day3-long.toml
+configs/day3.toml, configs/day3-long.toml, configs/day4.toml
 tests/test_day1.py, tests/test_day2.py, tests/test_day3.py
-notes/day1.md, notes/day2.md, notes/day3.md    research, decisions, measurements, failures
+notes/day1.md to notes/day4.md    research, decisions, measurements, failures
 ```
 
 `model.py` carries both generations on one code path. Every Day 2 switch defaults to the Day 1
@@ -296,9 +311,10 @@ On the length sweep, RoPE beats sinusoidal positions at every evaluation length,
 byte at 2,048. Extrapolation past the 512-token training length degrades rather than collapses, 2.29
 at 2,048 against 2.90 at 8,192. Position interpolation pays only past 4x the trained length.
 
-## What Day 3a is measuring
+## What Day 3a built
 
-Nothing yet. The code is built and the checks pass, but no training stage has run.
+Nothing was measured. The code is built and the checks pass, but no training stage ran before the
+plan changed.
 
 Day 2 closed by demanding a bigger step budget: its baseline moved 0.043 bits per byte across three
 seeds with nothing else changed, which swallowed every single-component result except SwiGLU's.
@@ -317,25 +333,18 @@ for multi-token prediction at this size.
 
 ## What is coming
 
-Each phase changes one component at a time and keeps the previous path behind a config flag.
-
-| Phase | Experiments | Work |
+| Day | Experiments | Work |
 | --- | --- | --- |
-| 2. Modern decoder | EXP-009 to EXP-016 | RoPE, RMSNorm, SwiGLU, MQA, GQA, SDPA, residual variants, multi-token prediction |
-| 3. Architecture lab | EXP-017 to EXP-025 | Sparse and compressed attention, MLA, MoE with routing collapse and its fix, Muon, mHC |
-| 4. Training at scale | EXP-026 to EXP-034 | Mixed precision, gradient accumulation, scheduler sweeps, scaling check, DDP, FSDP, tensor and pipeline parallelism |
-| 5. Inference | EXP-035 to EXP-042 | KV cache, prefill and decode split, `torch.compile`, INT8 and INT4, continuous batching, prefix cache, speculative decoding |
-| 6. Post training | EXP-043 to EXP-048 | SFT, LoRA, DPO, reward model, GRPO, RLVR |
-| 7. Evals | EXP-049 to EXP-053 | Perplexity, coding score, writing preference, regression gates, long-context needle recall |
-| 8. Assistant | EXP-054 to EXP-061 | Task classifier, hybrid retrieval, tool loop, cache stack, local-versus-API router |
-| 9. Hardening | EXP-062 to EXP-064 | Model card, release, SSM and multimodal survey |
-
-The next milestone is M2: one `modern-50M` config that beats the Generation 0 baseline on both
-perplexity and decode speed at equal parameter count.
+| 4 | EXP-065 to EXP-068 | TinyStories tokenizer, float16 on a T4, the 20M main run, sampling |
+| 5 | EXP-069 to EXP-072 | Seed spread at the new scale, multi-token prediction, KV cache, int8 |
+| 6 | EXP-073 to EXP-076 | Qwen weights in `model.py`, logit and tokenizer parity, cached generation |
+| 7 | EXP-077 to EXP-079 | Tool-call parser, the harness loop, the eval set and the stock-model baseline |
+| 8 | EXP-080 to EXP-083 | LoRA from scratch, harness traces, SFT, merge and int8 |
+| 9 | optional | GRPO on the task checks, or routing failed tasks to an external API |
 
 ## Working on this
 
-Read `PLAN.md`, `day-wise.md`, and every completed note in `notes/` before you change code. Take the
+Read `PLAN.md` and every completed note in `notes/` before you change code. Take the
 lowest unfinished experiment. Write the note first with a hypothesis and a baseline, then implement,
 then fill in the measurements, then record keep or revert. Do not start a day until the previous
 day's exit check passes.
