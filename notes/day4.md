@@ -107,7 +107,11 @@ Stop condition. If the gap is larger than 0.02, train the main run in float32 an
 
 ### Result
 
-Not yet run.
+First attempt, 2026-09-23, invalid. `autocast_dtype` chose bfloat16 because
+`torch.cuda.is_bf16_supported()` returns `True` on the T4, but the T4 (compute capability 7.5) has
+no bfloat16 tensor cores and emulates it. The "mixed" run took 1,529 s against 1,173 s for float32,
+with validation loss 1.259 against 1.250. Fix: choose bfloat16 only at compute capability 8.0 or
+higher, otherwise float16 with `GradScaler`. The float16 rerun appends to `day4-precision.jsonl`.
 
 ## EXP-067: the main run
 

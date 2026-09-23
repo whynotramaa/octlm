@@ -303,7 +303,7 @@ def train_model(
 def autocast_dtype(device: torch.device) -> torch.dtype | None:
     if device.type != "cuda":
         return None
-    return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    return torch.bfloat16 if torch.cuda.get_device_capability(device)[0] >= 8 else torch.float16
 
 
 def _vocab_size(tokenizer: Tokenizer) -> int:
