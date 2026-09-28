@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 .ruff_cache/
 artifacts/
-runs/
+/runs/
 
 AGENTS.md
-data/
+/data/
