@@ -62,11 +62,17 @@ def write(path: Path, data: object) -> None:
     path.write_text(_json(data) + "\n", encoding="utf-8")
 
 
+def export_jsonl(source: Path, name: str) -> None:
+    lines = source.read_text(encoding="utf-8").splitlines()
+    records = [json.loads(line) for line in lines if line.strip()]
+    write(WEB / "src/data/runs" / f"{name}.json", records)
+
+
 def export_runs() -> None:
     for source in sorted((ROOT / "runs").glob("*.jsonl")):
-        lines = source.read_text(encoding="utf-8").splitlines()
-        records = [json.loads(line) for line in lines if line.strip()]
-        write(WEB / "src/data/runs" / f"{source.stem}.json", records)
+        export_jsonl(source, source.stem)
+    for source in sorted((ROOT / "runs/kaggle-day4/day4").rglob("*.jsonl")):
+        export_jsonl(source, f"day4-{source.stem}")
 
 
 def tokenizer_fixture() -> dict:

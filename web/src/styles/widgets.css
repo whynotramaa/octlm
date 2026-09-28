@@ -33,6 +33,8 @@
 input[type="range"] { width: 100%; height: 40px; margin: 0; accent-color: oklch(52% 0.13 var(--hue-cyan)); cursor: pointer; }
 
 .segmented {
+  flex-wrap: wrap;
+  max-width: 100%;
   display: inline-flex;
   padding: 3px;
   gap: 2px;
@@ -318,3 +320,10 @@ input[type="range"] { transition: filter var(--fast) var(--ease); }
 input[type="range"]:hover { filter: brightness(1.08); }
 .control select:focus, .widget textarea:focus, .widget input:focus { border-color: var(--series-1); box-shadow: 0 0 0 3px color-mix(in oklch, var(--series-1) 15%, transparent); outline: none; }
 .widget textarea, .widget input[type="text"], .widget input[type="number"] { transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
+
+.story-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.story { margin: 0; white-space: pre-wrap; font-size: 15.5px; line-height: 1.7; color: var(--ink); padding: 14px 16px; border-radius: var(--r-control); background: var(--surface-2); border: 1px solid var(--line); }
+.story-prompt { font-weight: 650; color: var(--ink); background: color-mix(in oklch, var(--series-1) 14%, transparent); border-radius: 4px; padding: 0 3px; }
+.story-cut { color: var(--ink-3); }
+mark.repeat { color: inherit; background: color-mix(in oklch, var(--series-2) 24%, transparent); border-radius: 3px; transition: background var(--fast) var(--ease); }
+mark.repeat:hover { background: color-mix(in oklch, var(--series-2) 40%, transparent); }

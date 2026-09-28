@@ -14,7 +14,23 @@ import ChunkCache from "../../widgets/ChunkCache.tsx";
 import { noteTable } from "../../lib/notes.ts";
 import Flow from "../../widgets/Flow.tsx";
 
+import prepare from "../../data/runs/day4-prepare.json";
+import bpeRun from "../../data/runs/day4-bpe.json";
+
 export const results = noteTable(4, "EXP-065: corpus and tokenizer");
+export const kb = (bytesPerSecond) => `${Math.round(bytesPerSecond / 1000).toLocaleString("en-US")} KB/s`;
+export const bench = prepare.find((r) => r.type === "encode_benchmark");
+export const split = (name) => prepare.find((r) => r.split === name);
+export const encoded = (r) => `${r.stories.toLocaleString("en-US")} stories, ${r.tokens.toLocaleString("en-US")} tokens, ${Math.round(r.seconds)} s`;
+export const kaggle = {
+  "Tokenizer sample": `${bpeRun[0].sample_characters.toLocaleString("en-US")} characters, ${bpeRun[0].sample_stories.toLocaleString("en-US")} stories`,
+  "Tokenizer training": `${Math.round(bpeRun[0].seconds)} s`,
+  "Encode without cache": kb(bench.plain_bytes_per_second),
+  "Encode with cache": `${kb(bench.cached_bytes_per_second)}, ${(bench.cached_bytes_per_second / bench.plain_bytes_per_second).toFixed(1)}x faster`,
+  "Train split": encoded(split("train")),
+  "Valid split": encoded(split("valid")),
+  "Bytes per token": `${split("train").bytes_per_token.toFixed(3)} on both splits`,
+};
 export const pipeline = [
   { name: "Text file", shape: "2.2 GB", detail: "The TinyStories V2 training file, GPT-4 stories separated by <|endoftext|> lines." },
   { name: "Split stories", detail: "Split on the delimiter line, strip newlines around each story, drop empty ones, keep the truncated first story." },
@@ -79,12 +95,12 @@ The change is a dictionary on the tokenizer and three lines in `encode`. The out
 
 Hypothesis, in two parts: the pure-Python encoder is too slow to encode 2.2 GB in one session, and the chunk cache fixes the merge cost while the per-character pre-tokenizer stays the bottleneck. Stop condition: if the training split takes more than two hours, stop and speed up the pre-tokenizer before training anything.
 
-The benchmark encoded the first 2 million characters of the validation split twice, once calling the merge loop on every chunk, once through the cache starting empty. Results from `prepare.jsonl` and `bpe.jsonl` on Colab:
+The benchmark encoded the first 2 million characters of the validation split twice, once calling the merge loop on every chunk, once through the cache starting empty. The Colab column is the note's EXP-065 table. The main run repeated the whole preparation on Kaggle two days later, and the Kaggle column is read from that run's `prepare.jsonl` and `bpe.jsonl`:
 
 <div class="table-scroll">
 <table>
-  <thead><tr><th>Measure</th><th>Value</th></tr></thead>
-  <tbody>{results.map((r) => <tr><td>{r["Measure"]}</td><td>{r["Value"]}</td></tr>)}</tbody>
+  <thead><tr><th>Measure</th><th>Colab</th><th>Kaggle</th></tr></thead>
+  <tbody>{results.map((r) => <tr><td>{r["Measure"]}</td><td>{r["Value"]}</td><td>{kaggle[r["Measure"]]}</td></tr>)}</tbody>
 </table>
 </div>
 
@@ -95,6 +111,7 @@ The benchmark encoded the first 2 million characters of the validation split twi
 - The pre-tokenizer's cost was not measured on its own, so the second half stays open.
 - Both splits compress to 2.262 bytes per token.
 - 966 million tokens is 2.5 times what the main run consumes, so the model sees each token at most once.
+- Kaggle produced the same story counts, token counts and bytes per token. Only the times differ: Kaggle's CPU encoded the training split in {Math.round(split("train").seconds)} seconds, and the cache's speedup there was {(bench.cached_bytes_per_second / bench.plain_bytes_per_second).toFixed(1)}x.
 
 Decision: keep the cache.
 
@@ -108,5 +125,5 @@ Decision: keep the cache.
 - **Train-validation deduplication.** TinyStories ships separate files, and the note did not check them for overlapping stories.
 
 <Callout hue="gray" title="Sources">
-  <p>Eldan and Li, <a href="https://arxiv.org/abs/2305.07759">TinyStories</a>, for the dataset and the small-model claim. The <a href="https://huggingface.co/datasets/roneneldan/TinyStories">dataset card</a>, fetched 2026-09-23, for file sizes, format and license. The decisions and the result table, parsed at build time, come from <code>notes/day4.md</code>. The raw <code>prepare.jsonl</code> stayed on Colab.</p>
+  <p>Eldan and Li, <a href="https://arxiv.org/abs/2305.07759">TinyStories</a>, for the dataset and the small-model claim. The <a href="https://huggingface.co/datasets/roneneldan/TinyStories">dataset card</a>, fetched 2026-09-23, for file sizes, format and license. The decisions and the result table, parsed at build time, come from <code>notes/day4.md</code>. The Colab <code>prepare.jsonl</code> stayed on Colab. The Kaggle column comes from <code>runs/kaggle-day4/day4/data/prepare.jsonl</code> and <code>bpe.jsonl</code>.</p>
 </Callout>

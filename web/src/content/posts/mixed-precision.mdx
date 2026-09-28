@@ -17,6 +17,9 @@ import FormatRanges from "../../widgets/FormatRanges.tsx";
 
 export const precision = noteTable(4, "EXP-066: mixed precision");
 export const byType = (name) => precision.find((r) => r["dtype"].startsWith(name));
+import metrics from "../../data/runs/day4-metrics.json";
+
+export const run = metrics[metrics.length - 1];
 
 Every model up to Day 3 trained in float32, 4 bytes per number. GPUs have units built for 16-bit matrix math that run far faster. EXP-066 turned them on for the Day 4 model and checked that the loss did not suffer.
 
@@ -125,7 +128,9 @@ Decision: keep float16 for the main run.
 
 One step is 32 blocks of 512 tokens, 16,384 tokens. At 0.625 seconds per step that is about 26,200 tokens per second. Training costs about 6 FLOPs per parameter per token, so 26,200 tokens per second on a 26.3M-parameter model is about 4.1 TFLOPs sustained.
 
-The plan had assumed 15 TFLOPs, which is closer to the T4's float16 peak than to what a whole training step achieves. At the measured rate the main run's 24,000 steps take about 4.2 hours, not 70 minutes. [The main run](/posts/the-main-run/) plans around that number, and [why the plan changed](/posts/why-the-plan-changed/) uses it in the compute estimator.
+The plan had assumed 15 TFLOPs, which is closer to the T4's float16 peak than to what a whole training step achieves. At the measured rate the main run's 24,000 steps take about 4.2 hours, not 70 minutes. [Why the plan changed](/posts/why-the-plan-changed/) uses that rate in the compute estimator.
+
+The estimate held. [The main run](/posts/the-main-run/) trained all {run.step.toLocaleString("en-US")} steps in float16 on a Kaggle T4 in {(run.elapsed_seconds / 3600).toFixed(1)} hours, {(run.elapsed_seconds / run.step).toFixed(3)} seconds per step. The loss never diverged, and the step-1,000 validation loss, {metrics[0].validation_loss.toFixed(4)}, matches the float16 row above.
 
 <Label>Skipped</Label>
 

@@ -1,10 +1,9 @@
 ---
 title: The main run
-description: "26 million parameters, the Day 2 modern stack, 393 million TinyStories tokens, about four hours on a T4. Everything before this was preparation. It has not run yet, and this page fills in when it does."
+description: "26 million parameters, the Day 2 modern stack, 393 million TinyStories tokens, 4.1 hours in float16 on a Kaggle T4. Validation loss fell from 1.25 to 0.756, 0.484 bits per byte, and the curve was still sloping gently when the budget ran out."
 day: 4
 order: 3
 exps: ["EXP-067"]
-draft: true
 ---
 
 import Figure from "../../components/Figure.astro";
@@ -13,15 +12,29 @@ import Callout from "../../components/Callout.astro";
 import ParameterCounter from "../../widgets/ParameterCounter.tsx";
 import ScheduleExplorer from "../../widgets/ScheduleExplorer.tsx";
 import ComputeEstimator from "../../widgets/ComputeEstimator.tsx";
-import { configSection, modelConfig } from "../../lib/notes.ts";
+import RunCurve from "../../widgets/RunCurve.tsx";
+import { configSection, modelConfig, noteTable, num } from "../../lib/notes.ts";
+import metrics from "../../data/runs/day4-metrics.json";
 
 export const training = configSection("day4", "training");
 export const model = configSection("day4", "model");
 export const tokens = training.steps * training.batch_size * model.context_length;
 export const presets = [{ name: "Day 4", config: modelConfig("day4") }, { name: "Day 1", config: modelConfig("day1") }];
 export const schedule = [{ name: "Day 4", schedule: { learning_rate: training.learning_rate, min_learning_rate: training.min_learning_rate, warmup_steps: training.warmup_steps, steps: training.steps } }];
+export const curve = noteTable(4, "EXP-067: the main run");
+export const colab = noteTable(4, "EXP-066: mixed precision").find((r) => r["dtype"] === "float16");
+export const first = metrics[0];
+export const last = metrics[metrics.length - 1];
+export const parameters = 26255872;
+export const perStep = last.elapsed_seconds / last.step;
+export const colabPerStep = num(colab["train_seconds"]) / first.step;
+export const tokensPerSecond = tokens / last.elapsed_seconds;
+export const tflops = (6 * parameters * tokensPerSecond) / 1e12;
+export const tail = metrics.slice(-4).map((r, i) => (metrics[metrics.length - 5 + i].validation_loss - r.validation_loss).toFixed(4));
+export const f = (value, digits = 4) => value.toFixed(digits);
+export const n = (value) => Math.round(value).toLocaleString("en-US");
 
-Every model so far was too small or too undertrained to produce readable text or a readable architecture comparison. EXP-067 is the first run sized to do both. This post lays out the plan as it stands. The results section is empty until the run finishes.
+Every model so far was too small or too undertrained to produce readable text or a readable architecture comparison. EXP-067 is the first run sized to do both. It ran once, on a Kaggle T4, for {(last.elapsed_seconds / 3600).toFixed(1)} hours, and this post walks through the setup, the curve it produced, and how to tell whether it was done.
 
 <Label>The model</Label>
 
@@ -42,7 +55,7 @@ The embedding is 16 percent of the model, down from 24 percent at Day 1 size. Sw
 {training.steps.toLocaleString("en-US")} steps of {training.batch_size} blocks of {model.context_length} tokens is {tokens.toLocaleString("en-US")} tokens, about 15 per parameter. That is short of the compute-optimal 20 and far past Day 2's 0.25. The training split has 966 million tokens, so no token repeats.
 
 <Figure label="Playground" caption="Compute and time for the main run. The measured 4.1 TFLOPs comes from EXP-066 on a Colab T4.">
-  <ComputeEstimator client:visible presets={[{ name: "Day 4 main run", parameters: 26255872, tokens }]} measured={4.1} assumed={15} />
+  <ComputeEstimator client:visible presets={[{ name: "Day 4 main run", parameters, tokens }]} measured={4.1} assumed={15} />
 </Figure>
 
 The learning rate peaks at {training.learning_rate} after a {training.warmup_steps}-step warmup and follows a cosine to {training.min_learning_rate}. Weight decay is {training.weight_decay} and gradients clip at {training.grad_clip}, the same as every earlier day.
@@ -57,9 +70,15 @@ The learning rate peaks at {training.learning_rate} after a {training.warmup_ste
 
 The run moved from Colab to Kaggle on 2026-09-25. Kaggle's documentation, checked that day, gives a 12-hour limit per GPU session, 20 GB of saved output in `/kaggle/working`, and a T4 x2 option. `Save & Run All` starts a clean session and runs the notebook top to bottom: prepare the data, train, write samples.
 
-The trainer writes a checkpoint at every evaluation, every {training.eval_interval} steps, so a failure loses at most that many. A checkpoint survives into a later session only after its version's output is saved and attached as input to the next one. The notebook makes no promise to resume a version that failed before saving.
+The trainer writes a checkpoint at every evaluation, every {training.eval_interval} steps, so a failure loses at most that many. A checkpoint survives into a later session only after its version's output is saved and attached as input to the next one. The notebook made no promise to resume a version that failed before saving.
 
-octlm uses one GPU of the pair, `cuda:0`. The Colab timing, about 4.2 hours, is the starting estimate. The first Kaggle interval has to confirm it before the rest of the run is trusted.
+octlm used one GPU of the pair, `cuda:0`. The Colab timing, about 4.2 hours, was the starting estimate, and the first Kaggle interval had to confirm it.
+
+### A run that looked stuck
+
+Version 3 of the notebook was cancelled at 787 seconds because its log had stopped moving. It was not stuck. The log ended after the encode benchmark, and the next step, encoding the 2.2 GB training split, printed nothing until it finished. That step took 934 seconds on Colab, so the run was about halfway through it.
+
+The fix was one line: `encode_split` now prints the token count every time it flushes 16 million tokens to disk. Version 4 ran with that line and finished. A long step with no output looks exactly like a hung one, and the cost of telling them apart was a wasted session.
 
 <Label>The experiment</Label>
 
@@ -73,12 +92,59 @@ octlm uses one GPU of the pair, `cuda:0`. The Colab timing, about 4.2 hours, is 
 
 Day 4's exit check asks for three things. Validation loss has flattened, ten fixed prompts produce stories a reader judges coherent, and bits per byte on held-out stories is recorded.
 
-<Label>Result</Label>
+<Label>EXP-067</Label>
 
-## Not yet run
+## The curve
 
-The Kaggle notebook is written and its cells compile. No Kaggle measurement exists. This section will hold the loss curve, the final bits per byte, and the ten sampled stories from [sampling](/posts/sampling/).
+The run logged one record every 1,000 steps: the loss on that step's training batch, the validation loss and bits per byte on {n(last.validation_tokens)} held-out tokens, the learning rate and the gradient norm. All {metrics.length} records are below, read straight from the run's `metrics.jsonl`.
+
+<Figure label="Playground" caption="Every record of the Kaggle run. Switch the metric, or move the start of the x axis to zoom into the tail.">
+  <RunCurve client:visible records={metrics} />
+</Figure>
+
+### What happened?
+
+- Validation loss fell from {f(first.validation_loss)} at step {n(first.step)} to {f(last.validation_loss)} at step {n(last.step)}. Most of that drop happened in the first quarter of the run.
+- Bits per byte fell from {f(first.validation_bits_per_byte)} to {f(last.validation_bits_per_byte)}. The model spends under half a bit on each byte of a story it has never seen.
+- Perplexity ended at {f(last.validation_perplexity, 2)}. On average the model is as unsure as a fair choice between about two tokens.
+- Train loss sits below and above validation loss by turns. It is one batch, so it jitters. The two never separate, which means no overfitting: every training token was new.
+- The gradient norm stayed between {f(Math.min(...metrics.map((r) => r.gradient_norm)), 2)} and {f(Math.max(...metrics.map((r) => r.gradient_norm)), 2)} at every record, under the clip of {training.grad_clip}. It drifted up a little as the learning rate fell. The loss never spiked, and the divergence stop never fired.
+
+The note records nine of the checkpoints as a table, parsed here at build time:
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Step</th><th>Train loss</th><th>Validation loss</th><th>Bits per byte</th><th>Elapsed s</th></tr></thead>
+  <tbody>{curve.map((r) => <tr><td>{r["Step"]}</td><td>{r["Train loss"]}</td><td>{r["Validation loss"]}</td><td>{r["Bits per byte"]}</td><td>{r["Elapsed s"]}</td></tr>)}</tbody>
+</table>
+</div>
+
+<Label>Is it done?</Label>
+
+## Flattened, not stopped
+
+"Flat" needs a number. The stop condition says no improvement for 3,000 steps. That never happened. The last four 1,000-step drops in validation loss were {tail.join(", ")}.
+
+Each drop is smaller than the one before, and the last came while the learning rate sat at its floor of {training.min_learning_rate}. The model is still learning, slowly. A longer run would buy a little more, and it needs no new data: the model saw {tokens.toLocaleString("en-US")} of the 966 million encoded training tokens.
+
+The exit check asked for a flattened curve, and this one qualifies. Decision: keep the step-{n(last.step)} checkpoint as the Day 4 model.
+
+<Label>Kaggle against Colab</Label>
+
+## The same run on a different machine
+
+Two numbers say Kaggle reproduced the Colab path. The step-1,000 validation loss was {f(first.validation_loss)}, the same to four places as the Colab float16 run in [EXP-066](/posts/mixed-precision/), {colab["validation loss"]}. Same seed and same data order gave the same result on a different machine.
+
+The speed matched too. The whole run took {n(last.elapsed_seconds)} seconds for {n(last.step)} steps, {perStep.toFixed(3)} seconds per step, against {colabPerStep.toFixed(3)} on Colab. That is {n(tokensPerSecond)} tokens per second, or about {tflops.toFixed(1)} TFLOPs at 6 FLOPs per parameter per token. The 4.2-hour estimate held.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **A longer run.** The curve still slopes, but the exit check passed. Day 5's comparisons run at about 100 million tokens, a quarter of this budget, so a longer Day 4 run would not feed them.
+- **The second T4.** Kaggle's T4 x2 option has two GPUs. Using both needs distributed data parallel code that no later day uses. octlm ran on `cuda:0` alone.
+- **The 4,096-entry vocabulary.** Comparing it costs a second full run. It moved to Day 5, if GPU time allows.
 
 <Callout hue="gray" title="Sources">
-  <p>Settings are read from <code>configs/day4.toml</code> at build time. The plan, the Kaggle decisions and the stop conditions come from <code>notes/day4.md</code>. The <a href="https://www.kaggle.com/docs/notebooks">Kaggle Notebooks documentation</a>, checked 2026-09-25, for session limits and output storage.</p>
+  <p>Settings are read from <code>configs/day4.toml</code> at build time. The curve, the stats and the throughput arithmetic come from <code>runs/kaggle-day4/day4/metrics.jsonl</code>, the run's own log. The table, the plan, the stuck-run story and the stop conditions come from <code>notes/day4.md</code>. The <a href="https://www.kaggle.com/docs/notebooks">Kaggle Notebooks documentation</a>, checked 2026-09-25, for session limits and output storage.</p>
 </Callout>
