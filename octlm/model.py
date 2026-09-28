@@ -454,11 +454,15 @@ def sample_token(
 ) -> Tensor:
     if temperature == 0:
         return logits.argmax(dim=-1, keepdim=True)
+    probabilities = sampling_distribution(logits, temperature, top_k)
+    return torch.multinomial(probabilities.cpu(), 1, generator=generator).to(logits.device)
+
+
+def sampling_distribution(logits: Tensor, temperature: float, top_k: int) -> Tensor:
     if top_k:
         cutoff = logits.topk(min(top_k, logits.shape[-1]), dim=-1).values[:, -1:]
         logits = logits.masked_fill(logits < cutoff, float("-inf"))
-    probabilities = torch.softmax(logits / temperature, dim=-1)
-    return torch.multinomial(probabilities.cpu(), 1, generator=generator).to(logits.device)
+    return torch.softmax(logits / temperature, dim=-1)
 
 
 def parameter_count(model: nn.Module) -> int:

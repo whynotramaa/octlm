@@ -50,11 +50,12 @@ fine-tune did something measurable.
 
 - The laptop runs code edits, tests, dry runs, and short CPU checks. It does not train, because it
   overheats under long all-core load.
-- Colab Pro, since 2026-09-23, runs training, the Qwen parity check, and eval runs on a T4. The
-  account also offers a TPU v5e-1, which octlm does not use. `notes/day4.md` explains why. The T4
-  has no bfloat16, so training uses float16 with `torch.amp.GradScaler`.
-- Kaggle notebooks run anything longer than a Colab session survives. The free quota and background
-  execution are leads to verify in EXP-066.
+- Colab Pro supplied the T4 for EXP-065 and EXP-066. The account also offers a TPU v5e-1, which
+  octlm does not use. `notes/day4.md` explains why. The T4 has no bfloat16, so training uses
+  float16 with `torch.amp.GradScaler`.
+- Kaggle's T4 is the planned host for EXP-067 and later GPU work, starting 2026-09-25.
+  `notes/day4.md` records the 12-hour session limit, output storage, and the move from Colab. A
+  Kaggle speed measurement still has to confirm the Colab T4 timing estimate.
 - A rented GPU is for a run that blocks a decision, with the blocking evidence in the
   note.
 
@@ -71,7 +72,7 @@ The 150M row is why pretraining stops near 20M.
 
 ## Roadmap
 
-Days 1 and 2 are complete. Day 3a built four variants and stopped before any GPU run. New
+Days 1, 2, and 4 are complete. Day 3a built four variants and stopped before any GPU run. New
 experiment numbers start at EXP-065. EXP-020 through EXP-064 belonged to the first plan and stay
 retired. `notes/day3.md` maps each one to its new number or to the reason it was dropped.
 
@@ -88,7 +89,8 @@ after it.
 - EXP-066. Mixed precision. Add autocast and `GradScaler` on CUDA. Measure tokens per second and
   check that a short mixed-precision run tracks the float32 loss.
 - EXP-067. The main run. About 20M parameters, the Day 2 `modern` stack, 512-token context, about
-  400M tokens. Checkpoint to Drive and resume across sessions.
+  400M tokens. Save the checkpoint in Kaggle notebook output. Attach that output as input to resume
+  a later saved run.
 - EXP-068. Sampling. Add temperature and top-k to generation, because greedy decoding repeats
   itself on story data.
 
@@ -116,7 +118,7 @@ Its details are leads until the checkpoint's `config.json` confirms them.
 - EXP-073. Weight loading. Read `safetensors` with the standard library, which is a JSON header
   followed by raw tensor bytes. Map the names into `model.py`. Add only the switches `config.json`
   requires, such as QK-norm, projection bias, and the RoPE base.
-- EXP-074. Logit parity. Run Hugging Face `transformers` once on Colab as the reference, save the
+- EXP-074. Logit parity. Run Hugging Face `transformers` once on Kaggle as the reference, save the
   logits for a fixed prompt set, and compare. `transformers` stays out of `pyproject.toml`.
 - EXP-075. Tokenizer parity. Either parse Qwen's `tokenizer.json` with octlm's BPE or add the
   `tokenizers` package. Decide by exact ID match on the Day 1 tokenizer test strings.
@@ -179,7 +181,8 @@ Pick at most one.
 
 - The pure-Python BPE encoder may be too slow for TinyStories. EXP-065 measures it before anything
   depends on it.
-- Colab disconnects mid-run. Checkpoints go to Drive on a timer, and exact resume already exists.
+- A Kaggle version fails before saving output. Its local checkpoint may be unavailable later. Run
+  EXP-067 inside the 12-hour version window and attach a successful version's output to resume.
 - Qwen may differ from `model.py` in more places than expected. EXP-074 gates everything after it.
 - A 0.6B model may fail most harness tasks even after SFT. Keep the tasks small. The fallback is
   the next Qwen size with LoRA, if EXP-080 shows it fits in T4 memory.

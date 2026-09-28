@@ -161,6 +161,7 @@ def encode_split(tokenizer: ByteBPETokenizer, source: Path, target: Path) -> dic
                 counts["tokens"] += len(buffer)
                 buffer.tofile(file)
                 buffer = array("H")
+                print(f"{target.stem}: {counts['tokens']:,} tokens", flush=True)
         counts["tokens"] += len(buffer)
         buffer.tofile(file)
     os.replace(partial, target)

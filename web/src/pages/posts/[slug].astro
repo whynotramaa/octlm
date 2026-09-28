@@ -1,0 +1,116 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import Callout from "../../components/Callout.astro";
+import Chip from "../../components/Chip.astro";
+import { dayHue } from "../../lib/hues.ts";
+
+export async function getStaticPaths() {
+  const posts = (await getCollection("posts")).sort((a, b) => a.data.day - b.data.day || a.data.order - b.data.order);
+  return posts.map((post, index) => ({
+    params: { slug: post.id },
+    props: { post, previous: posts[index - 1], next: posts[index + 1] },
+  }));
+}
+
+const { post, previous, next } = Astro.props;
+const { Content } = await render(post);
+const { title, description, day, exps, draft, measured } = post.data;
+const hue = dayHue(day);
+---
+
+<Base title={`${title} · octlm`} description={description}>
+  <div class={`progress tint hue-${hue}`} aria-hidden="true" />
+  <article class={`article prose tint hue-${hue}`}>
+    <header class="post-header">
+      <a class="day-chip" href={`/#day-${day}`}><span>{day}</span>Day {day}</a>
+      <h1>{title}</h1>
+      <p class="lede">{description}</p>
+      <div class="chips">
+        {draft && <Chip hue="blue">Draft</Chip>}
+        {!measured && <Chip hue="orange">Not measured</Chip>}
+        {exps.map((id) => <Chip hue={hue} href="/roadmap/">{id}</Chip>)}
+      </div>
+    </header>
+    {!measured && (
+      <Callout hue="orange" title="Built and tested, never trained">
+        <p>This code exists in octlm behind a flag that defaults off, and its unit tests pass. The plan changed before any GPU run, so this post has no training result. The playgrounds run the same logic as the Python code. <a href="/posts/why-the-plan-changed/">Why the plan changed</a>.</p>
+      </Callout>
+    )}
+    {draft && (
+      <Callout hue="blue" title="Draft">
+        <p>This post is an outline. It fills in when the experiment runs.</p>
+      </Callout>
+    )}
+    <Content />
+    <nav class="series wide" aria-label="Series">
+      {previous ? <a class="series-link" href={`/posts/${previous.id}/`}><span class="label">Previous</span><span>{previous.data.title}</span></a> : <span />}
+      {next && <a class="series-link end" href={`/posts/${next.id}/`}><span class="label">Next</span><span>{next.data.title}</span></a>}
+    </nav>
+  </article>
+</Base>
+
+<style>
+  .progress {
+    position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 10;
+    background: var(--tint-fg); transform-origin: left; transform: scaleX(0);
+  }
+  @supports (animation-timeline: scroll()) {
+    .progress { animation: grow linear both; animation-timeline: scroll(root); }
+    @keyframes grow { to { transform: scaleX(1); } }
+  }
+  .day-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--tint-fg); text-decoration: none;
+  }
+  .day-chip span {
+    display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; letter-spacing: 0;
+    background: linear-gradient(180deg, var(--tint-surface), var(--tint-bottom)); border: 1px solid var(--tint-border);
+    transition: transform var(--fast) var(--ease);
+  }
+  .day-chip:hover span { transform: translateX(-2px); }
+  .post-header > * { animation: rise 520ms var(--ease) both; }
+  .post-header > :nth-child(2) { animation-delay: 60ms; }
+  .post-header > :nth-child(3) { animation-delay: 120ms; }
+  .post-header > :nth-child(4) { animation-delay: 180ms; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  .post-header { padding: clamp(32px, 7vw, 88px) 0 clamp(24px, 5vw, 56px); }
+  .post-header h1 {
+    font-size: clamp(36px, 6vw, 56px);
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+    font-weight: 700;
+    margin: 14px 0 20px;
+  }
+  .lede { font-size: 20px; line-height: 1.55; color: var(--ink-2); margin: 0 0 24px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .series {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 96px;
+    padding-top: 32px;
+    border-top: 1px solid var(--line);
+  }
+  .series-link {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 18px 20px;
+    border-radius: var(--r-figure);
+    border: 1px solid var(--line);
+    text-decoration: none;
+    font-weight: 600;
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+  }
+  .series-link { transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease), transform var(--slow) var(--ease), box-shadow var(--slow) var(--ease); }
+  .series-link:hover { border-color: var(--tint-border); background: var(--surface); transform: translateY(-2px); box-shadow: var(--shadow-soft); }
+  .series-link .label { color: var(--tint-fg); }
+  .series-link.end { text-align: right; grid-column: 2; }
+  @media (max-width: 720px) {
+    .lede { font-size: 18px; }
+    .series { grid-template-columns: 1fr; }
+    .series-link.end { grid-column: 1; }
+  }
+</style>

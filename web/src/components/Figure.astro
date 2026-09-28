@@ -1,0 +1,39 @@
+---
+interface Props {
+  label?: string;
+  caption?: string;
+}
+
+const { label, caption } = Astro.props;
+---
+
+<figure class="wide figure" data-reveal>
+  {label && <div class="label">{label}</div>}
+  <div class="stage"><slot /></div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+  .figure { margin: 2.2em 0 2.4em; }
+  .figure > .label { margin: 0 0 12px 4px; }
+  .stage {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-figure);
+    box-shadow: var(--shadow-soft);
+    padding: clamp(18px, 3.4vw, 36px);
+    transition: border-color var(--slow) var(--ease), box-shadow var(--slow) var(--ease);
+  }
+  .figure:hover .stage { border-color: var(--line-2); box-shadow: var(--shadow); }
+  .figure > .label { color: var(--tint-fg, var(--ink-3)); }
+  figcaption {
+    max-width: var(--measure);
+    margin: 14px auto 0;
+    color: var(--ink-3);
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+  @media (max-width: 720px) {
+    .stage { padding: 16px 14px; border-radius: 16px; }
+  }
+</style>

@@ -1,0 +1,28 @@
+---
+interface Props {
+  hue?: "blue" | "green" | "orange" | "red" | "purple" | "cyan" | "gray";
+  title?: string;
+}
+
+const { hue = "blue", title } = Astro.props;
+---
+
+<aside class:list={["callout", "tint", `hue-${hue}`]}>
+  {title && <div class="title">{title}</div>}
+  <div class="body"><slot /></div>
+</aside>
+
+<style>
+  .callout {
+    margin: 1.8em 0;
+    padding: 16px 20px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, var(--tint-surface), var(--tint-bottom));
+    border: 1px solid var(--tint-border);
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  .title { font-weight: 650; color: var(--tint-fg); margin-bottom: 4px; }
+  .body :global(p) { margin: 0.4em 0 0; }
+  .body :global(p:first-child) { margin-top: 0; }
+</style>

@@ -1,0 +1,31 @@
+---
+import { Code } from "astro:components";
+import { readSymbol } from "../lib/source.ts";
+
+interface Props {
+  file: string;
+  symbol: string;
+}
+
+const { file, symbol } = Astro.props;
+const { code, line } = readSymbol(file, symbol);
+---
+
+<div class="source">
+  <div class="meta"><code>{file}</code><span>line {line}</span></div>
+  <Code code={code} lang="python" themes={{ light: "github-light", dark: "github-dark" }} class="code" />
+</div>
+
+<style>
+  .source { margin: 0.6em 0 1.8em; }
+  .meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--ink-3);
+    margin: 0 4px 8px;
+  }
+  .meta code { background: none; border: 0; padding: 0; font-size: 13px; }
+  .source :global(.code) { margin: 0; }
+</style>

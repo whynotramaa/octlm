@@ -1,0 +1,91 @@
+---
+title: Sampling
+description: "A model outputs a distribution, and something has to pick a token from it. Greedy decoding repeats itself on stories. Temperature reshapes the distribution and top-k cuts its tail, and both are one line each."
+day: 4
+order: 4
+exps: ["EXP-068"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import SamplingPlay from "../../widgets/SamplingPlay.tsx";
+import TemperatureSweep from "../../widgets/TemperatureSweep.tsx";
+
+[A language model predicts](/posts/next-token-prediction/) a probability for every token in the vocabulary. Generation turns that into text one token at a time. It picks a token, appends it, and runs the model again. Up to Day 3, octlm always picked the most likely token. Day 4 added sampling, because the exit check judges the model's stories, and greedy decoding would make it judge the decoding instead.
+
+<Label>The problem</Label>
+
+## Greedy decoding loops
+
+Greedy decoding takes the argmax at every step. It is deterministic, and on story data it repeats itself. Once a phrase like "and they were very happy" becomes the most likely continuation of itself, the model says it again, and again. Sampling breaks the loop by sometimes picking a less likely token, and two settings control how often and how far.
+
+<Label>Temperature</Label>
+
+## Divide the scores before the softmax
+
+Temperature $\tau$ divides every logit before the softmax:
+
+$$
+p_i = \frac{e^{z_i / \tau}}{\sum_j e^{z_j / \tau}}
+$$
+
+At $\tau = 1$ the distribution is the model's own. Below 1 the gaps between scores grow, and the distribution sharpens toward the top token. Above 1 the gaps shrink, and it flattens toward uniform. As $\tau$ approaches 0 it becomes greedy, which is why octlm treats temperature 0 as argmax rather than dividing by zero.
+
+<Label>Top-k</Label>
+
+## Keep only the k best tokens
+
+Top-k sets every logit outside the $k$ largest to $-\infty$ before the softmax, so those tokens get exactly zero probability. Temperature alone never removes a token. With thousands of unlikely tokens, their combined probability can be large enough that the model regularly picks nonsense. Top-k cuts that tail.
+
+<Figure label="Playground" caption="Eight candidate next tokens with made-up scores. The probabilities use the same function as octlm's sampling_distribution, and a test checks them against PyTorch at four temperatures and four values of k. The draw count uses a seeded generator.">
+  <SamplingPlay client:visible />
+</Figure>
+
+### What happened?
+
+- At temperature 0, every draw is `" happy"`. That is greedy decoding.
+- At 0.5 the top token takes most of the probability. At 1.5 the less likely tokens get real shares, and the entropy rises toward the 3 bits of a uniform choice among eight.
+- Top-k 3 zeroes five tokens outright, whatever the temperature. The remaining three renormalize to sum to 1.
+- The draw counts follow the probabilities but not exactly. With 200 draws, a token at p = 0.1 lands anywhere from about 12 to 28 times.
+
+<Figure label="Chart" caption="Probability of four candidate tokens as the temperature rises, top-k off.">
+  <TemperatureSweep client:visible />
+</Figure>
+
+<Label>In octlm</Label>
+
+## Two functions and a generator
+
+`Decoder.generate` gained `temperature`, `top_k` and a `torch.Generator`. The default temperature is 0, so every earlier day's greedy output is unchanged.
+
+<Source file="octlm/model.py" symbol="sample_token" />
+
+<Source file="octlm/model.py" symbol="sampling_distribution" />
+
+`sampling_distribution` is the deterministic half. It filters, scales and applies softmax. The draw itself uses `torch.multinomial` with the seeded generator, so a given seed reproduces the same story. This page can check the distribution against PyTorch and cannot check the draws, because PyTorch's random number generator cannot be matched in the browser.
+
+<Source file="octlm/model.py" symbol="Decoder.generate" />
+
+Generation still reruns the whole context for every new token. The KV cache that avoids this is EXP-071 on Day 5.
+
+<Label>EXP-068</Label>
+
+## The plan for the samples
+
+`octlm.day4 samples` writes ten fixed prompts twice, once greedy and once at temperature 0.8 with top-k 40, seed 0. Both sets go into `notes/day4.md`, where a reader judges coherence for the Day 4 exit check. The prompts start stories like "Once upon a time, there was a little girl named Lily." and "Sam wanted to go to the park, but".
+
+The code is written. The samples need the trained model from [the main run](/posts/the-main-run/), so this section has no result yet.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **Top-p, or nucleus, sampling.** It keeps the smallest set of tokens whose probabilities sum to p, which adapts to how confident the model is. Top-k with temperature is enough to stop greedy loops, and adding top-p is one line if the samples need it.
+- **Repetition penalties.** They hide a weak model's repetition instead of measuring it.
+- **Beam search.** It searches for the single most likely continuation, which makes repetition worse on open-ended text.
+
+<Callout hue="gray" title="Sources">
+  <p>Holtzman et al., <a href="https://arxiv.org/abs/1904.09751">The Curious Case of Neural Text Degeneration</a>, for greedy and beam-search repetition and for top-p. Fan et al., <a href="https://arxiv.org/abs/1805.04833">Hierarchical Neural Story Generation</a>, for top-k sampling. The design and the sample plan come from EXP-068 in <code>notes/day4.md</code>.</p>
+</Callout>

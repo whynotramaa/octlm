@@ -1,0 +1,80 @@
+---
+title: A corpus big enough to measure
+description: "Day 1 trained on 111 KB of planning notes. Day 2 needed held-out code and prose to compare architectures, so it built a 7 MB corpus from the Python standard library and six public-domain books."
+day: 2
+order: 1
+exps: []
+---
+
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import { noteTable, num } from "../../lib/notes.ts";
+import Figure from "../../components/Figure.astro";
+import CorpusSplit from "../../widgets/CorpusSplit.tsx";
+
+export const colab = noteTable(2, "The corpus moved to Colab");
+export const books = noteTable(2, "The corpus", 1);
+export const splits = colab.map((r) => ({ name: r["Split"], code: num(r["Code"]), prose: num(r["Prose"]) }));
+
+Day 2 compares six changes to the decoder, one at a time, against the Day 1 baseline. A comparison needs held-out text large enough that the difference between two models is bigger than the noise of evaluating them. The project's own planning documents, about 111 KB, were not. So before any Day 2 experiment ran, Day 2 built a corpus.
+
+<Label>What it holds</Label>
+
+## Python code and nineteenth-century prose
+
+The plan wanted a model that would eventually read code and edit prose, so the corpus has both, kept in separate categories so each can be evaluated alone.
+
+- **Code** is every top-level module of the Python standard library installed on the machine, sorted, skipping test files and dunder files. It is Python-licensed.
+- **Prose** is six Project Gutenberg books, all public domain in the United States. Four are narrative and two are expository, so the prose is not one author's voice.
+
+<table>
+  <thead><tr><th>Gutenberg ID</th><th>Title</th><th>Kind</th></tr></thead>
+  <tbody>{books.map((row) => <tr><td>{row["Gutenberg ID"]}</td><td>{row["Title"]}</td><td>{row["Kind"]}</td></tr>)}</tbody>
+</table>
+
+<Label>How it splits</Label>
+
+## By chunk, not by book
+
+`octlm/corpus.py` cuts every source into chunks of about 64 KB on line boundaries, so no chunk ends in the middle of a line. A seeded shuffle then sends 10 percent of the chunks to validation.
+
+<Source file="octlm/corpus.py" symbol="chunk" />
+
+Splitting by chunk instead of by whole book keeps every source present in both splits. Two neighboring chunks of one book share a style but share no text, so validation never contains a sentence the model trained on. Each chunk stays a separate document in the JSONL file, so the BPE trainer never merges across a chunk boundary.
+
+<Figure label="Playground" caption="Top: bytes per split from the Colab build. Bottom: an illustration of the two ways to hold out 10 percent.">
+  <CorpusSplit client:visible splits={splits} />
+</Figure>
+
+<Label>The numbers</Label>
+
+## The build every result uses
+
+The corpus was first built on the laptop. When training moved to Colab, the corpus had to move too, because the code half is read from the running machine's standard library, and Colab runs Python 3.13 where the laptop runs 3.14. A different Python is a different corpus. The Colab build is the one every Day 2 training result uses:
+
+<table>
+  <thead><tr><th>Split</th><th>Documents</th><th>Bytes</th><th>Code</th><th>Prose</th></tr></thead>
+  <tbody>{colab.map((row) => <tr><td>{row["Split"]}</td><td>{row["Documents"]}</td><td>{row["Bytes"]}</td><td>{row["Code"]}</td><td>{row["Prose"]}</td></tr>)}</tbody>
+</table>
+
+The mix is 60 percent code and 40 percent prose by bytes. `data/manifest.json` records a SHA-256 fingerprint of each split, and the note tells every later reader to check them before comparing a new run, because Colab upgrades its Python image without warning.
+
+The tokenizer was retrained on this corpus at 2,048 entries, from every tenth training document to keep the pair-recount cost down. It stopped at 1,787 merges and reached 0.431 tokens per byte. Cut into 256-token blocks, the training split is 11,508 blocks, about 2.96 million tokens, and validation is 1,528 blocks: 782 of code and 745 of prose.
+
+Remember the 2.96 million. [Why the plan changed](/posts/why-the-plan-changed/) comes back to it. The Day 2 models had 3.3 million parameters, and a model that size wants about 20 times more tokens than this.
+
+<Label>Known limits</Label>
+
+## What the note says it does not cover
+
+- The code is Python only. The TypeScript and JavaScript the first plan targeted are absent.
+- The prose is nineteenth-century literature, not modern writing.
+- The standard-library file set depends on the Python install. The fingerprints pin what was used. They do not promise that another machine rebuilds the same corpus.
+- The plan asked for 50 percent code, 30 percent prose and 20 percent instruction data. There was no instruction data, and the code side ran out before its budget, which is the whole gap between 3 to 2 and 5 to 3.
+
+Day 2 needed a corpus large enough to separate architectures, not the final data mix. Whether it was large enough is the question the rest of Day 2 answers.
+
+<Callout hue="gray" title="Sources">
+  <p>Every number and decision on this page comes from the corpus section of <code>notes/day2.md</code>. Both tables are parsed from it when the site builds.</p>
+</Callout>

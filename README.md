@@ -22,9 +22,11 @@ Day 3a stopped on 2026-09-23 before any GPU run: EXP-016 through EXP-019. Multi-
 sliding-window and strided attention, block-compressed KV, and MLA are built and tested behind flags
 that default off. Multi-token prediction runs again as EXP-070. The others are not scheduled.
 
-Day 4 is next: TinyStories, float16 training on a T4, and one properly trained 20M model.
+Day 4 is complete: EXP-065 through EXP-068. A 26M-parameter `modern` model trained on 393M
+TinyStories tokens in float16 on a Kaggle T4 in 4.1 hours. It reaches validation loss 0.7561 and
+0.4839 bits per byte, and writes coherent short stories with temperature 0.8 and top-k 40.
 
-Read `notes/day1.md`, `notes/day2.md`, and `notes/day3.md` for the research sources, the
+Read `notes/day1.md` through `notes/day4.md` for the research sources, the
 measurements, and every keep-or-revert decision.
 
 ## Requirements
@@ -128,7 +130,7 @@ uv run python -m octlm.day3 mla --config configs/day3-long.toml          # EXP-0
 uv run python -m octlm.day3 report
 ```
 
-Run Day 4 on a GPU. `notebooks/octlm-colab.ipynb` runs the same stages with Drive persistence.
+Run Day 4 on a GPU. `notebooks/octlm-kaggle.ipynb` runs the remaining stages on Kaggle.
 `prepare` downloads 2.2 GB and encodes it once. `train` resumes from `--checkpoint` when the file
 exists:
 
@@ -138,6 +140,34 @@ python -m octlm.day4 train                         # EXP-066 and EXP-067
 python -m octlm.day4 samples --temperature 0       # EXP-068, greedy
 python -m octlm.day4 samples                       # EXP-068, temperature 0.8, top-k 40
 ```
+
+### Run Day 4 on Kaggle
+
+1. Create a private Kaggle dataset named `octlm-code` with the repository files at its root. If the
+   GitHub repository is public, Kaggle can import it directly. For a private repository, commit the
+   current code, run `git archive --format=zip --output=octlm-code.zip HEAD`, and upload the ZIP as
+   a private dataset. The dataset must contain `octlm/day4.py` and `configs/day4.toml`.
+2. Import [octlm-kaggle.ipynb](notebooks/octlm-kaggle.ipynb) as a Kaggle notebook. Add `octlm-code`
+   under **Input**. Select **GPU T4 x2** under **Session options**. Turn on **Internet** for the first
+   run, because `prepare` downloads TinyStories from Hugging Face. Check that your account has enough
+   GPU quota for the run.
+3. Select **Save Version > Save & Run All**. The notebook prepares the corpus if needed, trains for
+   24,000 steps, and writes sampled and greedy stories. It uses one T4. The Colab T4 baseline suggests
+   about 4.2 hours of training; Kaggle time has not been measured. Check the first `training` record
+   before trusting that estimate.
+4. After the version succeeds, download `day4/run.pt`, `day4/metrics.jsonl`, and
+   `day4/samples.jsonl` from the version's **Output**. Add its output as an **Input** on a later run
+   and set `PREVIOUS` in the notebook to the attached `day4` folder that contains `data/train.bin`.
+   The notebook copies the files into `/kaggle/working/day4` and resumes automatically.
+
+To resume a partial Colab run, upload `train.bin`, `valid.bin`, `bpe.json`, and `run.pt` as a private
+Kaggle dataset. Place the binary files under `data/`, attach the dataset, and set `PREVIOUS` to its
+root. The trainer verifies the configuration, tokenizer, and token-file hashes before resuming.
+If an interrupted Kaggle version has no saved output, its local checkpoint is unavailable in a new
+session. A successful saved version or an external copy is needed for cross-session resume.
+
+Kaggle uses its preinstalled CUDA PyTorch. Do not run `uv sync` there: this repository's lock file
+pins a CPU PyTorch build for the laptop.
 
 Run the checks:
 
@@ -168,24 +198,23 @@ uv run ruff format --check .
 
 ## Running on a GPU
 
-The development machine has no GPU, so every measurement in `notes/` is a CPU measurement.
+The development machine has no GPU. Day 2 and the first Day 4 measurements used a Colab T4.
 `--device` on `octlm.train`, `octlm.day2`, and `octlm.bench` moves the model and its batches to
 CUDA. It defaults to `auto`, which takes the GPU when the machine has one. Each training record
 carries the device it ran on.
 
-`notebooks/octlm-colab.ipynb` runs the training stages on a Colab GPU. Open it in Colab, pick a GPU
-runtime, and run the cells in order. It clones this repository and uses Colab's preinstalled
-PyTorch, because `uv.lock` pins the CPU build. That means the Python and PyTorch versions differ
-from the local environment, so Colab timings cannot be compared against the CPU timings in `notes/`.
+`notebooks/octlm-colab.ipynb` records the Colab path used for EXP-065 and EXP-066. Kaggle runs the
+remaining Day 4 work. Both notebook environments use preinstalled CUDA PyTorch because `uv.lock`
+pins the CPU build. Their timings cannot be compared against the laptop's CPU timings.
 
 Two stages are worth a GPU: `variants` and `length`. The rest of Day 2 measures CPU behavior.
 `sdpa` in particular reports process resident memory, which does not describe GPU allocation, so it
 stays on CPU until Phase 5 gives `bench.py` a device-aware memory field.
 
 `octlm.corpus` reads the Python standard library of the machine it runs on, so the corpus belongs to
-the machine that trains. That is Colab now, and the fingerprints in `notes/day2.md` are the Colab
-ones. Check `data/manifest.json` against them before comparing a new run, because Colab upgrades its
-Python image without warning and a different image is a different corpus.
+the machine that trains. Day 2 ran on Colab, and the fingerprints in `notes/day2.md` are the Colab
+ones. Check `data/manifest.json` against them before comparing a new Day 2 run. A different Python
+image can produce a different corpus.
 
 ## What is in the repository
 
@@ -200,7 +229,8 @@ octlm/
   day2.py        Day 2 experiment stages and the tiled attention sketch
   day3.py        Day 3a experiment stages, the copy probe, and the cache arithmetic
   day4.py        TinyStories download, token files, the Day 4 training run, and samples
-notebooks/octlm-colab.ipynb     GPU runs on Colab
+notebooks/octlm-colab.ipynb     Colab runs for EXP-065 and EXP-066
+notebooks/octlm-kaggle.ipynb    Kaggle run for EXP-067 and EXP-068
 configs/day1.toml, configs/day2.toml, configs/day2-long.toml
 configs/day3.toml, configs/day3-long.toml, configs/day4.toml
 tests/test_day1.py, tests/test_day2.py, tests/test_day3.py

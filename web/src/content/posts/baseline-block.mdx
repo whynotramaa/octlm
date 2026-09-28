@@ -1,0 +1,164 @@
+---
+title: The baseline block
+description: "A Transformer block is attention and a feed-forward layer, each wrapped in a norm and a residual connection. This post assembles the Day 1 decoder from those parts, including the initialization bug that stopped it learning."
+day: 1
+order: 6
+exps: ["EXP-007"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import LineChart from "../../charts/LineChart.tsx";
+import NormPlay from "../../widgets/NormPlay.tsx";
+import InitScale from "../../widgets/InitScale.tsx";
+import ParameterCounter from "../../widgets/ParameterCounter.tsx";
+import Flow from "../../widgets/Flow.tsx";
+import { modelConfig } from "../../lib/notes.ts";
+
+export const presets = [{ name: "Day 1", config: modelConfig("day1") }];
+export const c = presets[0].config;
+export const forward = [
+  { name: "Token IDs", shape: "[B, T]", detail: "Integers from the tokenizer, one per position." },
+  { name: "Embed", shape: `[B, T, ${c.d_model}]`, detail: "Token embedding plus learned position embedding. Each ID becomes a row of the token table, and each position adds a row of the position table." },
+  ...Array.from({ length: c.n_layers }, (_, i) => ({ name: `Block ${i + 1}`, shape: `[B, T, ${c.d_model}]`, detail: `LayerNorm, ${c.n_heads}-head causal attention, add. Then LayerNorm, feed-forward, add. ${i ? "Same structure as block 1, its own weights." : "The output shape equals the input shape, which is what lets blocks stack."}` })),
+  { name: "Final norm", shape: `[B, T, ${c.d_model}]`, detail: "One more LayerNorm, so the head sees vectors of a steady scale." },
+  { name: "Tied head", shape: `[B, T, ${c.vocab_size}]`, detail: "Multiply by the token embedding matrix transposed. Each vector becomes one score per vocabulary entry." },
+];
+export const xs = Array.from({ length: 81 }, (_, i) => -4 + i * 0.1);
+export const gelu = (x) => 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * x ** 3)));
+
+The previous posts built the pieces that turn text into vectors and let positions read each other. A decoder stacks the same block several times on top of those vectors, then turns the final vectors back into token scores. Day 1's baseline has two blocks, width 128 and four heads, and it follows the small GPT-2 layout.
+
+<Label>The whole model</Label>
+
+## The forward pass, with shapes
+
+For a batch of $B$ sequences of $T$ token IDs, with the Day 1 settings $C = 128$ and $V = 1{,}024$:
+
+<Figure label="Diagram" caption="The Day 1 forward pass. Click a stage for what it does and the shape it produces. Shapes use the Day 1 config.">
+  <Flow client:visible stages={forward} />
+</Figure>
+
+Every block keeps the shape `[B, T, C]`. That is what lets blocks stack, because the output of one is a valid input to the next.
+
+<Source file="octlm/model.py" symbol="Decoder.forward" />
+
+<Label>The residual stream</Label>
+
+## Each block adds to the vector, it does not replace it
+
+A block does not compute a new vector from scratch. It computes a correction and adds it:
+
+$$
+x \leftarrow x + \operatorname{Attention}(\operatorname{LN}(x)), \qquad x \leftarrow x + \operatorname{FFN}(\operatorname{LN}(x))
+$$
+
+The running vector $x$ is called the residual stream. The addition has a concrete benefit for training. The gradient of $x + f(x)$ with respect to $x$ is $1 + f'(x)$, so every block passes at least the identity backward. A deep stack of additions gives the gradient a direct path from the loss to the embedding, and it does not shrink as blocks multiply.
+
+<Source file="octlm/model.py" symbol="TransformerBlock" />
+
+The norm sits inside the branch, before attention and before the feed-forward layer. That placement is called pre-norm. The 2017 paper put it after the addition, called post-norm, and Day 2 tested that choice in [where the norm goes](/posts/residual-placement/).
+
+<Label>LayerNorm</Label>
+
+## Normalize each vector across its own features
+
+LayerNorm rescales one position's vector to mean 0 and variance 1, then applies a learned gain $\gamma$ and bias $\beta$ per feature:
+
+$$
+\operatorname{LN}(x) = \gamma \odot \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta, \qquad \mu = \frac{1}{C}\sum_{i} x_i, \quad \sigma^2 = \frac{1}{C}\sum_i (x_i - \mu)^2
+$$
+
+The statistics come from the $C$ features of one vector. They never mix positions or sequences. The Day 1 reading plan made this point explicit, because BatchNorm, the older method, averages across the batch, and that would let one sequence's statistics depend on another's.
+
+<Figure label="Playground" caption="A six-number vector and its LayerNorm, with gain 1 and bias 0. Use the buttons to shift or scale the input.">
+  <NormPlay client:visible initial="layernorm" />
+</Figure>
+
+### What happened?
+
+- The output always has mean 0 and standard deviation 1, whatever the input.
+- "Add 1 to every entry" leaves the output unchanged. LayerNorm removes any shift.
+- "Double every entry" also leaves it unchanged. LayerNorm removes any scale.
+- The order of the entries survives. Larger inputs stay larger.
+
+Without a norm, activations can grow block by block, and softmax and the feed-forward layer behave differently at different scales. The norm gives every block an input on the same scale. Day 2 compares this with [RMSNorm](/posts/rmsnorm/), which drops the mean.
+
+<Label>Feed-forward</Label>
+
+## A per-position two-layer network
+
+Attention moves information between positions. The feed-forward layer then processes each position alone. It widens the vector to $4C$, applies a nonlinearity, and projects back:
+
+$$
+\operatorname{FFN}(x) = W_{\text{down}}\, \operatorname{GELU}(W_{\text{up}}\, x)
+$$
+
+For Day 1 that is 128 to 512 and back to 128. The two matrices hold 131,072 parameters per block, twice the attention projections. Most of a Transformer's parameters live here.
+
+GELU is a smooth version of ReLU. It weights each input by the probability that a standard normal variable is below it, $\operatorname{GELU}(x) = x \cdot \Phi(x)$. Large positive inputs pass through, large negative ones go to 0, and near 0 the curve is smooth and dips slightly below zero.
+
+<Figure label="Curves" caption="GELU against ReLU. The GELU line uses the tanh approximation, which stays within about 0.001 of the exact curve PyTorch computes.">
+  <LineChart client:visible series={[{ name: "ReLU", points: xs.map((x) => [x, Math.max(0, x)]), slot: 3 }, { name: "GELU", points: xs.map((x) => [x, gelu(x)]), slot: 1 }]} x={{ label: "input", format: "fixed1" }} y={{ label: "output", format: "fixed1" }} height={260} />
+</Figure>
+
+<Source file="octlm/model.py" symbol="FeedForward" />
+
+With `feed_forward = "gelu"` this is the Day 1 layer. The `gate` branch is [SwiGLU](/posts/swiglu/), added on Day 2.
+
+<Label>The output head</Label>
+
+## Tied weights, the embedding read backwards
+
+The head turns each final vector into $V$ scores. octlm uses the embedding matrix for this, transposed:
+
+$$
+z = h\, E^\top, \qquad z \in \mathbb{R}^{V}
+$$
+
+The score for token $v$ is the dot product between the final hidden vector and that token's embedding row. The model predicts token $v$ when its output vector points the same way as $v$'s input vector. One matrix serves both ends, which saves $V \times C$ parameters, 131,072 at Day 1 size and 4.2 million at Day 4 size, and gives rare tokens' rows a gradient from both directions. In code it is one line: `self.lm_head.weight = self.token_embedding.weight`.
+
+<Label>EXP-007</Label>
+
+## The bug that stopped the model learning
+
+Problem: the first test run of the baseline learned poorly. The test that overfits one block failed.
+
+The cause was the initialization. PyTorch's `nn.Embedding` draws its weights from a standard normal, $\sigma = 1$. That is a reasonable input, because the first LayerNorm rescales it. With a tied head, the same rows are also the output weights. The final hidden vector has entries of about unit size after the last norm, and its dot product with a row of $C$ unit-variance numbers has a standard deviation of about $\sqrt{C} \approx 11$. Softmax over scores that far apart puts nearly all the probability on one arbitrary token.
+
+<Figure label="Playground" caption="The expected loss of a fresh model with a tied head at each initial weight scale. A model that knows nothing should start at ln V.">
+  <InitScale client:visible />
+</Figure>
+
+### What happened?
+
+- At $\sigma = 1$ the top token takes most of the probability and the starting loss is far above $\ln V$. The model begins confident and wrong, and its first job is to undo that.
+- At $\sigma = 0.02$ the scores spread by about 0.23, the distribution is nearly uniform, and the loss starts at $\ln V$.
+
+The fix draws every linear and embedding weight from $\mathcal{N}(0, 0.02^2)$, the GPT-2 value, and sets biases to zero. The overfit test passed after the change. Decision: keep.
+
+<Source file="octlm/model.py" symbol="Decoder._initialize" />
+
+<Label>Parameters</Label>
+
+## Where the 541,952 parameters live
+
+<Figure label="Playground" caption="The Day 1 config from configs/day1.toml. Change any field to see what moves.">
+  <ParameterCounter client:visible presets={presets} />
+</Figure>
+
+Per block, attention holds $4C^2 = 65{,}536$ weights, the feed-forward layer $8C^2 = 131{,}072$, and the two norms $4C = 512$. The linear layers have no biases. The token table adds $VC$, the position table $T_{\max}C$, and the final norm $2C$.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **Biases on the linear layers.** octlm follows current decoders and uses none. The norms keep their bias on Day 1 because PyTorch's `LayerNorm` has one.
+- **Dropout.** The layers accept it, and every config sets it to 0. These models are undertrained, not overfit.
+- **Scaled initialization for residual projections.** GPT-2 also shrinks the output projections by $1/\sqrt{2L}$. At two layers the difference is small, and the change would need its own comparison.
+
+<Callout hue="gray" title="Sources">
+  <p>Ba et al., <a href="https://arxiv.org/abs/1607.06450">Layer Normalization</a>, for per-sample normalization across features. Hendrycks and Gimpel, <a href="https://arxiv.org/abs/1606.08415">Gaussian Error Linear Units</a>, for GELU. The <a href="https://cdn.openai.com/better-language-models/language-models.pdf">GPT-2 report</a> for pre-norm placement and the residual scaling. The 0.02 standard deviation is the value GPT-2's released training code uses. EXP-007 and the initialization fix come from <code>notes/day1.md</code>.</p>
+</Callout>

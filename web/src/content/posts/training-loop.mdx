@@ -1,0 +1,167 @@
+---
+title: A training loop that resumes exactly
+description: "Batches, AdamW, gradient clipping, a warmup and cosine schedule, and checkpoints that restore every random generator, so a run split in two ends with the same weights as a run done in one go."
+day: 1
+order: 7
+exps: ["EXP-008"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import LineChart from "../../charts/LineChart.tsx";
+import ScheduleExplorer from "../../widgets/ScheduleExplorer.tsx";
+import overfit from "../../data/runs/day1-overfit.json";
+import { configSection } from "../../lib/notes.ts";
+import Flow from "../../widgets/Flow.tsx";
+import GradClip from "../../widgets/GradClip.tsx";
+
+export const schedule = (name) => {
+  const t = configSection(name, "training");
+  return { learning_rate: t.learning_rate, min_learning_rate: t.min_learning_rate, warmup_steps: t.warmup_steps, steps: t.steps };
+};
+export const presets = [{ name: "Day 1", schedule: schedule("day1") }, { name: "Day 2", schedule: schedule("day2") }, { name: "Day 4", schedule: schedule("day4") }];
+export const last = overfit[overfit.length - 1];
+export const first = overfit[0];
+export const stepStages = [
+  { name: "Draw a batch", shape: "[8, 129]", detail: "A seeded generator picks 8 blocks of T + 1 tokens. The first T are the input, the last T the targets." },
+  { name: "Forward", shape: "[8, 128, V]", detail: "The model turns every input position into a score for every vocabulary entry." },
+  { name: "Loss", shape: "scalar", detail: "Cross entropy against the shifted targets, averaged over every position that is not PAD." },
+  { name: "Backward", detail: "loss.backward() fills a gradient for every weight." },
+  { name: "Clip", detail: "If the gradient's global norm is above grad_clip, the whole gradient is scaled down to that norm." },
+  { name: "AdamW step", detail: "Each weight moves by its own step size, from running averages of its gradient and squared gradient. Weight decay pulls weights toward 0 separately." },
+  { name: "Next learning rate", detail: "The schedule sets the rate for the next step: a linear warmup, then a cosine decay to the minimum." },
+];
+
+A model and a loss are not enough to train. The loop around them decides what data each step sees, how far each step moves the weights, and what happens when the run stops halfway. Day 1 built that loop and held it to one strict test: stop a run, resume it, and end with exactly the weights an uninterrupted run produces.
+
+<Figure label="Diagram" caption="One training step, in the order octlm runs it. Click a stage for what it does.">
+  <Flow client:visible loop stages={stepStages} />
+</Figure>
+
+<Label>Data</Label>
+
+## From documents to blocks
+
+The trainer encodes each document with `<|bos|>` at the start and `<|eos|>` at the end, joins them into one long stream, and cuts the stream into blocks of $T + 1$ tokens. The first $T$ tokens of a block are the input and the last $T$ are the targets, the same block shifted by one. A short stream is padded with `<|pad|>`, and PAD targets are excluded from the loss.
+
+<Source file="octlm/train.py" symbol="make_blocks" />
+
+The third tensor, `byte_lengths`, records how many bytes each target token decodes to. [Bits per byte](/posts/next-token-prediction/) needs it, and it is computed once here instead of at every evaluation.
+
+Each step draws a batch of blocks with a seeded generator. Day 1 uses 8 blocks of 128 tokens, so one step sees 1,024 target tokens.
+
+<Label>The optimizer</Label>
+
+## AdamW: a per-weight step size, and decay kept separate
+
+Plain gradient descent moves every weight by the same multiple of its gradient. Adam keeps two running averages per weight, the gradient $m$ and the squared gradient $v$, and divides one by the square root of the other:
+
+$$
+m_t = \beta_1 m_{t-1} + (1 - \beta_1) g_t, \qquad v_t = \beta_2 v_{t-1} + (1 - \beta_2) g_t^2
+$$
+
+$$
+\theta_t = \theta_{t-1} - \eta \left( \frac{\hat m_t}{\sqrt{\hat v_t} + \epsilon} + \lambda\, \theta_{t-1} \right)
+$$
+
+The hats mark a bias correction for the early steps, when both averages start at 0. The ratio $\hat m / \sqrt{\hat v}$ is about $\pm 1$ for a weight whose gradient keeps its sign, and smaller for one whose gradient flips around. So each weight gets its own effective step size, and the learning rate $\eta$ sets the scale of all of them.
+
+The last term is weight decay, which pulls weights toward 0. The "W" in AdamW means the decay is applied directly to the weights, outside the gradient average. In the older form the decay went into $g$ and was then divided by $\sqrt{\hat v}$, so weights with large gradients were barely decayed. Loshchilov and Hutter showed the decoupled form regularizes the way decay is supposed to.
+
+octlm decays only matrices. Norm gains, biases and anything else with one dimension are excluded, because shrinking a norm's gain toward 0 would shrink the signal, not regularize it.
+
+<Source file="octlm/train.py" symbol="optimizer_for" />
+
+$\beta_1 = 0.9$ and $\beta_2 = 0.95$ are the LLaMA values, and weight decay is 0.1.
+
+<Label>Clipping</Label>
+
+## Gradient clipping caps one bad step
+
+Occasionally a batch produces a very large gradient, and one step at full size can undo many good ones. Clipping rescales the whole gradient when its norm across every parameter exceeds a limit $c$:
+
+$$
+g \leftarrow g \cdot \min\!\left(1, \frac{c}{\lVert g \rVert_2}\right)
+$$
+
+The direction stays the same, only the length is capped. octlm uses $c = 1.0$ and logs the norm before clipping at every evaluation, as `gradient_norm` in each run file. A norm that sits far above 1 for many steps means the learning rate is too high.
+
+<Figure label="Playground" caption="Forty steps of made-up gradient norms with one spike. Move the threshold and see which steps get shortened.">
+  <GradClip client:visible />
+</Figure>
+
+<Label>The schedule</Label>
+
+## Warm up, then decay along a cosine
+
+The learning rate changes every step. It rises linearly from near 0 to its peak over the warmup steps, then follows half a cosine down to a floor:
+
+$$
+\eta(s) = \begin{cases} \eta_{\max} \cdot \dfrac{s + 1}{s_{\text{warm}}} & s < s_{\text{warm}} \\[10pt] \eta_{\min} + \tfrac{1}{2}\left(1 + \cos \pi p\right)(\eta_{\max} - \eta_{\min}) & \text{otherwise, } p = \dfrac{s - s_{\text{warm}}}{s_{\text{total}} - s_{\text{warm}}} \end{cases}
+$$
+
+Warmup exists because Adam's second-moment estimate $\hat v$ is noisy for the first steps, and a full-size step on a bad estimate can push the model somewhere it struggles to leave. The cosine spends most of the run near the peak, where learning is fast, then slows down smoothly so the final steps make small adjustments.
+
+<Figure label="Playground" caption="The learning rate at every step, computed by the same function as octlm's learning_rate. Presets load each day's config. A test checks this function against the Python one at the warmup edges, the midpoint and the end.">
+  <ScheduleExplorer client:visible presets={presets} />
+</Figure>
+
+### What happened?
+
+- Day 1 warms up for 20 of 200 steps, 10 percent of the run. Day 4 warms up for 500 of 24,000, about 2 percent. Both reach the same shape.
+- The floor is 10 percent of the peak in every config. The LLaMA schedule ends at the same ratio.
+- Past the last step the rate stays at the floor. The function clamps the cosine's progress at 1.
+
+<Source file="octlm/train.py" symbol="learning_rate" />
+
+<Label>Checkpoints</Label>
+
+## What a checkpoint must hold to resume exactly
+
+Resuming needs more than the weights. The Adam averages $m$ and $v$ are part of the state, and so is every random generator, because the next batch depends on the sampler's state. octlm saves all of it, plus three fingerprints that must match on load: the config, the dataset, and the tokenizer.
+
+<Source file="octlm/train.py" symbol="checkpoint_state" />
+
+The file is written atomically. `save_checkpoint` writes to a temporary file and renames it over the old one, and a rename either happens completely or not at all. A crash during the write leaves the previous checkpoint intact instead of a half-written one.
+
+<Source file="octlm/train.py" symbol="save_checkpoint" />
+
+The fingerprints earned their place on Day 2. Adding config fields changed the Day 1 config fingerprint, and old checkpoints refused to load. That refusal is the check working. A checkpoint trained under one config must not quietly continue under another.
+
+<Label>EXP-008</Label>
+
+## Two tests, exact resume and overfitting one block
+
+**Exact resume.** A CPU run was split in two, saved and resumed, and compared with an uninterrupted run. The weights were identical and the next loss was the same. PyTorch promises this only on one release, one platform and one device, and the claim has the same limit.
+
+**Overfit one block.** A model that can learn anything should be able to memorize a single block. On one fixed BPE block, training loss fell from {first.train_loss.toFixed(4)} at step 20 to {last.train_loss.toFixed(4)} at step 200, with perplexity {last.validation_perplexity.toFixed(4)} and {last.validation_bits_per_byte.toFixed(4)} bits per byte on that block.
+
+<Figure label="Measured" caption="Loss on the single training block, every 20 steps, from runs/day1-overfit.jsonl. The evaluation reads the same block, so the two lines should nearly meet.">
+  <LineChart client:visible series={[{ name: "train loss", points: overfit.map((r) => [r.step, r.train_loss]), slot: 1 }, { name: "evaluation loss", points: overfit.map((r) => [r.step, r.validation_loss]), slot: 2, dashed: true }]} x={{ label: "step" }} y={{ label: "loss (nats per token)" }} markers height={300} />
+</Figure>
+
+Greedy decoding from the start of the block then reproduced the memorized text:
+
+```text
+# Miniature modern LLM stack from first principles
+
+## Goal
+
+Build one long runn
+```
+
+The note is careful about what this proves. The tokenizer, the causal model, the loss, the optimizer and generation fit together and can drive the loss down. It says nothing about generalization, since the model saw one block.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **Learning-rate search.** Day 1 took common values, 3e-4 with a floor of 3e-5. Nothing in the results pointed at the learning rate.
+- **Gradient accumulation and mixed precision.** Day 1 batches fit in CPU memory in float32. Mixed precision arrived on [Day 4](/posts/mixed-precision/).
+- **Resume across machines.** Bit-exact resume holds on one device. A resumed GPU run is expected to drift slightly, and Day 4 does not claim otherwise.
+
+<Callout hue="gray" title="Sources">
+  <p>Loshchilov and Hutter, <a href="https://arxiv.org/abs/1711.05101">Decoupled Weight Decay Regularization</a>, for AdamW. Touvron et al., <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, for betas, weight decay, clipping and the 10 percent floor. PyTorch's <a href="https://docs.pytorch.org/tutorials/beginner/saving_loading_models.html">checkpoint guide</a> and <a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">reproducibility note</a>. EXP-008 comes from <code>notes/day1.md</code>, the fingerprint change from <code>notes/day2.md</code>.</p>
+</Callout>

@@ -1,0 +1,98 @@
+---
+title: SwiGLU, a gated feed-forward layer
+description: "SwiGLU replaces the feed-forward layer's single activation with a product of two projections, one of them passed through a smooth gate. It was the only single change on Day 2 that beat the noise."
+day: 2
+order: 4
+exps: ["EXP-011"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import SwiGluGate from "../../widgets/SwiGluGate.tsx";
+import GridChart from "../../widgets/GridChart.tsx";
+import { variantGrid } from "../../lib/notes.ts";
+import GateSurface from "../../widgets/GateSurface.tsx";
+
+export const grid = variantGrid();
+export const row = (name) => grid.find((r) => r.variant === name);
+export const pct = (a, b) => (((a - b) / b) * 100).toFixed(0);
+
+The feed-forward layer holds about two thirds of a Transformer block's parameters. Day 1's version widens the vector, applies GELU to each hidden unit, and projects back. SwiGLU, used by LLaMA, Qwen and most current decoders, changes what happens in the middle.
+
+<Label>Definition</Label>
+
+## Two projections, one of them a gate
+
+SwiGLU computes two projections of the input instead of one. One goes through the SiLU function, also called Swish, and the result multiplies the other elementwise:
+
+$$
+\operatorname{FFN}_{\text{SwiGLU}}(x) = W_{\text{down}}\left(\operatorname{SiLU}(W_{\text{gate}}\, x) \odot W_{\text{up}}\, x\right), \qquad \operatorname{SiLU}(z) = z \cdot \sigma(z)
+$$
+
+Read each hidden unit as a valve. The gate projection decides how open the valve is, and the up projection decides what flows through. With GELU, the same number decides both whether a unit fires and how strongly. With a gate, the model can learn those two things separately, and the product lets a unit respond to a combination of input features rather than a threshold on one.
+
+<Figure label="Playground" caption="Top: the three activation curves. Middle: one hidden unit, with its gate and up values set by hand. Bottom: the hidden width that keeps SwiGLU's parameter count equal to GELU's.">
+  <SwiGluGate client:visible />
+</Figure>
+
+### What happened?
+
+- SiLU looks like GELU: near 0 for large negative inputs, near the identity for large positive ones, with a small dip below 0 in between.
+- A gate value near −4 closes the unit whatever the up value is. A large gate passes the up value almost unchanged, sign included. GELU can only pass positive values through.
+- At every width, SwiGLU's hidden size is about two thirds of GELU's, and the two parameter counts differ by well under 1 percent.
+
+<Figure label="Playground" caption="One hidden unit's output over a grid of inputs. Left: the gated SwiGLU unit. Right: the ungated GELU unit, which ignores the gate axis.">
+  <GateSurface client:visible />
+</Figure>
+
+<Label>Matching parameters</Label>
+
+## Three matrices, so two thirds of the width
+
+SwiGLU has three weight matrices where GELU has two. At the same hidden width it would have 50 percent more feed-forward parameters, and any improvement could come from the extra weights. The GLU-variants paper therefore cuts the hidden width to $\tfrac{2}{3} \cdot 4C$. octlm rounds that to a multiple of 8, which GPU matrix kernels prefer:
+
+<Source file="octlm/model.py" symbol="DecoderConfig.hidden_size" />
+
+At $C = 256$ that gives 680 instead of 1,024, and at $C = 512$ it gives 1,368 instead of 2,048. EXP-011 compared at matched parameter count for exactly this reason, and the note says why. Matching the width instead would only measure that we added weights.
+
+The layer itself is the same class as Day 1's, with the gate branch switched on:
+
+<Source file="octlm/model.py" symbol="FeedForward" />
+
+<Label>EXP-011</Label>
+
+## The one swap that cleared the noise
+
+Hypothesis: SwiGLU improves bits per byte at equal parameters. The paper reports a perplexity of 1.944 against GELU's 1.983 after 65,536 steps.
+
+<Figure label="Measured" caption="Mean bits per byte over three seeds, with the spread across seeds drawn as a bar centered on the mean. The gray band is the baseline's seed spread. From the variant-grid table in notes/day2.md.">
+  <GridChart client:visible rows={grid} highlight={["baseline", "swiglu"]} />
+</Figure>
+
+### What happened?
+
+- On code, SwiGLU improves on the baseline by {(row("baseline").code - row("swiglu").code).toFixed(4)} bits per byte. The baseline's own seed spread is {row("baseline").codeSpread}, so the gain is about twice the noise.
+- On prose it improves by {(row("baseline").prose - row("swiglu").prose).toFixed(4)}, a smaller gain against a much tighter prose spread.
+- Its own seeds agree closely, with a code spread of {row("swiglu").codeSpread}, a fifth of the baseline's.
+- It costs {pct(row("swiglu").secondsPerStep, row("baseline").secondsPerStep)} percent more time per step. Three smaller matrix multiplies are slower than two larger ones at this size, and there is one more elementwise product.
+
+Decision: keep. Of the six single-component changes on Day 2, this is the only one whose effect sat outside the seed noise. SwiGLU is part of the `modern` stack and of the Day 4 model.
+
+<Label>Why it works</Label>
+
+## What is known, and what is not
+
+The GLU-variants paper tests several gates and reports that the gated forms beat the ungated ones. On why, its conclusion famously offers no explanation and attributes the success to "divine benevolence". A common reading is that the multiplicative interaction adds expressiveness per parameter: a unit can compute something like "feature A, but only when feature B", which a single threshold needs more units to approximate. That reading is an intuition, not a result this project measured.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **Other GLU variants.** GEGLU and ReGLU use GELU or ReLU as the gate. The paper finds them close to SwiGLU, and the models Day 6 must load use SwiGLU.
+- **A width sweep.** Only the parameter-matched width was run.
+
+<Callout hue="gray" title="Sources">
+  <p>Shazeer, <a href="https://arxiv.org/abs/2002.05202">GLU Variants Improve Transformer</a>, for the definition, the two-thirds rule and the perplexity table. Touvron et al., <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, for its use at 2/3 × 4d. The measurement and decision come from <code>notes/day2.md</code>.</p>
+</Callout>

@@ -1,0 +1,113 @@
+---
+title: SDPA and FlashAttention's tiling
+description: "Plain attention builds a T by T score matrix in memory. FlashAttention computes the same result a block at a time with a running maximum and sum, and never stores the square. Day 2 wrote the tiling by hand and measured PyTorch's kernels against the plain path."
+day: 2
+order: 6
+exps: ["EXP-014"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import LineChart from "../../charts/LineChart.tsx";
+import OnlineSoftmax from "../../widgets/OnlineSoftmax.tsx";
+import sdpa from "../../data/runs/day2-exp014-sdpa.json";
+import tiled from "../../data/runs/day2-exp014-tiled.json";
+import equivalence from "../../data/runs/day2-exp014-equivalence.json";
+import MemoryTraffic from "../../widgets/MemoryTraffic.tsx";
+
+export const pick = (backend, dtype, key) => sdpa.filter((r) => r.backend === backend && r.dtype === dtype).map((r) => [r.length, r[key]]);
+export const at = (backend, dtype, length) => sdpa.find((r) => r.backend === backend && r.dtype === dtype && r.length === length);
+export const mib = (bytes) => Math.round(bytes / 2 ** 20).toLocaleString("en-US");
+export const worstTiled = Math.max(...tiled.map((r) => r.max_abs_error));
+export const worstEquivalence = Math.max(...equivalence.map((r) => r.max_abs_error));
+
+[Causal attention, by hand](/posts/causal-attention/) computed the full score matrix, masked it, took a softmax, and multiplied by the values. That is correct and easy to read. It also allocates a $T \times T$ matrix per head, and at long lengths that matrix dominates both memory and time. Day 2 replaced it with PyTorch's fused attention function and kept the handwritten path as the reference.
+
+<Label>The problem</Label>
+
+## Attention is limited by memory traffic, not arithmetic
+
+The FlashAttention paper's argument starts with the GPU's memory layout. An A100 has 40 to 80 GB of main memory (HBM) at 1.5 to 2.0 TB/s, and 192 KB of fast on-chip memory (SRAM) per multiprocessor at about 19 TB/s. Plain attention writes the score matrix to HBM, reads it back for the softmax, writes the probabilities, and reads them again to multiply by $V$. For long sequences those reads and writes, not the multiplications, set the time. The paper counts $\Theta(Nd + N^2)$ memory accesses for the standard method.
+
+The fix is to never write the square. Load a block of keys and values into fast memory, compute that block's scores for a block of queries, fold them into the output, and move on. The obstacle is softmax, which needs the maximum and the sum over the whole row before it can normalize anything.
+
+<Figure label="Playground" caption="Where attention's data lives on a GPU, and how many elements each method moves between the two memories.">
+  <MemoryTraffic client:visible />
+</Figure>
+
+<Label>Online softmax</Label>
+
+## A softmax you can compute one block at a time
+
+Softmax subtracts the row maximum before exponentiating, for numerical safety. Suppose we have processed some keys and kept three things per query row: the largest score so far $m$, the sum $\ell = \sum e^{s_j - m}$, and the unnormalized output $o = \sum e^{s_j - m} v_j$. A new block of scores arrives with maximum $\tilde m$. Then:
+
+$$
+m' = \max(m, \tilde m), \qquad \ell' = e^{m - m'}\,\ell + \sum_{j \in \text{block}} e^{s_j - m'}, \qquad o' = e^{m - m'}\,o + \sum_{j \in \text{block}} e^{s_j - m'}\, v_j
+$$
+
+The factor $e^{m - m'}$ rescales everything computed under the old maximum to the new one. After the last block, $o / \ell$ is exactly the softmax-weighted average. No step needed the whole row.
+
+<Figure label="Playground" caption="One query row of a 12-position causal attention, processed in blocks. The strip shows that row's scores: gray for blocks already folded in, blue for the current block, hatched for masked future keys. The inputs come from the parity fixture, and a test checks this page's tiled result against octlm's tiled_attention.">
+  <OnlineSoftmax client:visible />
+</Figure>
+
+### What happened?
+
+- The running maximum only moves up, and when it does, the running sum drops by the factor $e^{m - m'}$ before the new block adds to it.
+- The partial output after each block is already a valid attention output over the keys read so far. It converges to the full answer at the last block.
+- Change the block size and the final output is the same to about $10^{-7}$. The block size is a performance choice, not a numerical one.
+
+<Label>In octlm</Label>
+
+## The tiled sketch, in Python
+
+Day 2 wrote this forward pass in plain PyTorch to learn the blocking. It is a sketch of the algorithm, not a fast kernel:
+
+<Source file="octlm/day2.py" symbol="tiled_attention" />
+
+It matches `scaled_dot_product_attention` to {worstTiled.toExponential(1)} at lengths 128, 512 and 1,024 and block sizes 64, 128 and 256, from `runs/day2-exp014-tiled.jsonl`.
+
+The model itself calls PyTorch's fused function. The note read its signature from the installed build rather than trust the documentation: `(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None, enable_gqa=False)`. octlm passes `is_causal=True` instead of a mask tensor, never both, and `enable_gqa` when there are fewer KV heads than query heads.
+
+<Source file="octlm/model.py" symbol="CausalSelfAttention.forward" />
+
+Before any Day 2 run used it, the full model through SDPA was checked against the handwritten path at 8, 4, 2 and 1 KV heads. The largest difference was {worstEquivalence.toExponential(1)}, from `runs/day2-exp014-equivalence.jsonl`. That check is what licensed `attention = "sdpa"` for every later run.
+
+<Label>EXP-014</Label>
+
+## Math against flash on a CPU
+
+PyTorch has several SDPA backends. `MATH` is the plain algorithm, score matrix and all. `FLASH_ATTENTION` is the tiled one. On the laptop's CPU build, both ran in float32 and bfloat16, and the memory-efficient backend had no CPU kernel. The benchmark ran one forward pass at batch 1, 8 heads, head width 32, and ran each measurement in its own process: `ru_maxrss` reports a process's lifetime peak, and the first version of the benchmark let the math backend's peak leak into the flash row.
+
+<Figure label="Measured" caption="Resident memory growth during one attention forward pass, float32, CPU, from runs/day2-exp014-sdpa.jsonl. Both axes are logarithmic, base 2. Doubling the length should quadruple a quadratic cost.">
+  <LineChart client:visible series={[{ name: "math", points: pick("math", "float32", "rss_growth_bytes"), slot: 2 }, { name: "flash", points: pick("flash", "float32", "rss_growth_bytes"), slot: 1 }]} x={{ label: "sequence length", log: true }} y={{ label: "memory growth", log: true, format: "mib" }} markers height={300} />
+</Figure>
+
+<Figure label="Measured" caption="Seconds for one forward pass, float32 and bfloat16, same run file.">
+  <LineChart client:visible series={[{ name: "math fp32", points: pick("math", "float32", "seconds"), slot: 2 }, { name: "flash fp32", points: pick("flash", "float32", "seconds"), slot: 1 }, { name: "math bf16", points: pick("math", "bfloat16", "seconds"), slot: 2, dashed: true }, { name: "flash bf16", points: pick("flash", "bfloat16", "seconds"), slot: 1, dashed: true }]} x={{ label: "sequence length", log: true }} y={{ label: "seconds", log: true, format: "fixed3" }} markers height={300} />
+</Figure>
+
+### What happened?
+
+- The math backend's memory grows about fourfold per doubling, from {mib(at("math", "float32", 1024).rss_growth_bytes)} MiB at 1,024 tokens to {mib(at("math", "float32", 8192).rss_growth_bytes)} MiB at 8,192. That is the score matrix.
+- The flash backend's memory grows with the inputs: {mib(at("flash", "float32", 8192).rss_growth_bytes)} MiB at 8,192.
+- At 8,192 tokens flash is {(at("math", "float32", 8192).seconds / at("flash", "float32", 8192).seconds).toFixed(1)} times faster in float32.
+- bfloat16 is slower than float32 on this CPU for both backends. That is the opposite of a GPU, and the note flagged it for Day 4's mixed-precision work.
+
+The note is strict about what transfers. This CPU has no HBM, so the speedup here comes from cache traffic, not the HBM traffic the paper measures. The direction of the argument transfers, and the note quotes no GPU speedup from these numbers. The memory result is the one to keep: flash never materializes the square.
+
+Decision: keep SDPA for every model from Day 2 onward. The Day 1 path stays as the reference the fused one is checked against. On the Day 4 T4, SDPA uses the memory-efficient kernel instead, because PyTorch's FlashAttention kernel needs a newer GPU.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **A CUDA kernel.** The tiled sketch teaches the blocking. Writing the real kernel teaches CUDA, which is a different project.
+- **The backward pass.** FlashAttention recomputes the scores during backpropagation instead of storing them. The sketch is forward-only.
+- **GPU numbers for this benchmark.** It reports process resident memory, which does not describe GPU allocation. Running it on the T4 would produce a number that looks like a measurement and is not one.
+
+<Callout hue="gray" title="Sources">
+  <p>Dao et al., <a href="https://arxiv.org/abs/2205.14135">FlashAttention</a>, for the memory hierarchy, the access counts and tiling with online softmax. PyTorch's <code>scaled_dot_product_attention</code> signature was read from the installed 2.14 build. Timings and memory come from <code>runs/day2-exp014-sdpa.jsonl</code>, the tiled and equivalence errors from the matching run files, and the decisions from <code>notes/day2.md</code>.</p>
+</Callout>

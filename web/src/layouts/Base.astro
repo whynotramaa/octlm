@@ -1,0 +1,131 @@
+---
+import "@fontsource-variable/plus-jakarta-sans";
+import "katex/dist/katex.min.css";
+import "../styles/global.css";
+import "../styles/widgets.css";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Building a small language model from scratch, measured at every step." } = Astro.props;
+const path = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23121214'/><circle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5'/></svg>" />
+    <script is:inline>
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) document.documentElement.classList.add("js");
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">octlm</a>
+      <nav>
+        <a href="/" aria-current={path === "/" ? "page" : undefined}>Posts</a>
+        <a href="/roadmap/" aria-current={path.startsWith("/roadmap") ? "page" : undefined}>Roadmap</a>
+        <button class="theme" type="button" aria-label="Toggle dark mode">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" />
+          </svg>
+        </button>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <span>octlm, a from-scratch language model lab.</span>
+      <span>Every number on this site comes from a run in the repository.</span>
+    </footer>
+    <script>
+      const reveal = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("in");
+          reveal.unobserve(entry.target);
+        }
+      }, { rootMargin: "0px 0px -8% 0px" });
+      document.querySelectorAll("[data-reveal]").forEach((el) => reveal.observe(el));
+      document.querySelector(".theme")?.addEventListener("click", () => {
+        const root = document.documentElement;
+        const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        root.dataset.theme = dark ? "light" : "dark";
+        try {
+          localStorage.setItem("theme", root.dataset.theme);
+        } catch {}
+      });
+    </script>
+  </body>
+</html>
+
+<style>
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: calc(var(--wide) + 2 * var(--gutter));
+    margin: 0 auto;
+    padding: 22px var(--gutter);
+  }
+  .brand {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-size: 18px;
+    text-decoration: none;
+  }
+  nav { display: flex; align-items: center; gap: 4px; }
+  nav a {
+    text-decoration: none;
+    color: var(--ink-2);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--r-control);
+    transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+  }
+  nav a:hover { color: var(--ink); background: var(--surface-2); }
+  nav a[aria-current="page"] { color: var(--ink); }
+  .theme {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-left: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+    background: var(--surface);
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+  .theme:hover { color: var(--ink); border-color: var(--line-2); }
+  .theme svg { transition: transform var(--slow) var(--ease); }
+  .theme:hover svg { transform: rotate(180deg); }
+  .theme:active { transform: scale(0.92); }
+  .brand { transition: opacity var(--fast) var(--ease); }
+  .brand:hover { opacity: 0.7; }
+  .site-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    justify-content: space-between;
+    max-width: calc(var(--wide) + 2 * var(--gutter));
+    margin: 120px auto 0;
+    padding: 32px var(--gutter) 48px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 14px;
+  }
+</style>

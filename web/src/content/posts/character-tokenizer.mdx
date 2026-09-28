@@ -1,0 +1,110 @@
+---
+title: Characters as tokens
+description: "The simplest tokenizer gives every character its own ID. It is easy to build and easy to check, and it shows exactly what a better tokenizer has to fix."
+day: 1
+order: 1
+exps: ["EXP-003"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import CharTokenizer from "../../widgets/CharTokenizer.tsx";
+import { repoText } from "../../lib/notes.ts";
+import character from "../../data/runs/day1-character.json";
+import SequenceLength from "../../widgets/SequenceLength.tsx";
+
+export const training = [...new Set(Array.from(repoText("PLAN.md")))].join("");
+export const last = character[character.length - 1];
+
+A model reads integers, not text. A tokenizer is the pair of functions that turns text into a list of integer IDs and back. Its design decides how long every sequence is, what the model can represent at all, and what one prediction means.
+
+Day 1 built two tokenizers. This post covers the first and simplest one, which is also the deliberate baseline for the second.
+
+<Label>Definition</Label>
+
+## One character, one ID
+
+The character tokenizer collects every distinct character in the training text, sorts them, and numbers them. Four special tokens come first:
+
+| ID | Token | Used for |
+| ---: | --- | --- |
+| 0 | `<\|pad\|>` | Filler at the end of a short block. Never a training target. |
+| 1 | `<\|bos\|>` | Beginning of a document. |
+| 2 | `<\|eos\|>` | End of a document. |
+| 3 | `<\|unk\|>` | Any character the training text did not contain. |
+
+Encoding looks each character up. Decoding looks each ID up and joins the characters. That is the whole algorithm:
+
+<Source file="octlm/tokenizer.py" symbol="CharacterTokenizer.encode" />
+
+`lookup.get(character, 3)` is the important part. A character outside the vocabulary becomes ID 3, and there is no way back. Decoding ID 3 gives `<|unk|>`, not the original character.
+
+<Label>Playground</Label>
+
+## A vocabulary learned from one file
+
+EXP-003 trained the character tokenizer on the project's own `PLAN.md`. The playground below learns its vocabulary from today's `PLAN.md` at build time, the same way.
+
+<Figure label="Playground" caption="Each box is one token with its ID underneath. Red boxes are <|unk|>: characters PLAN.md never used.">
+  <CharTokenizer client:visible training={training} />
+</Figure>
+
+### What happened?
+
+- English and Python encode cleanly, because `PLAN.md` is English prose with code-like names in it. Every token is one character, so the token count equals the character count.
+- The Japanese preset is almost entirely unknown. `PLAN.md` contains no Japanese, so those characters have no ID.
+- The emoji are unknown for the same reason. One emoji is one character here, but four UTF-8 bytes.
+
+<Label>EXP-003</Label>
+
+## What we measured
+
+Problem: we needed a tokenizer to compare BPE against, trained on the same text.
+
+The character tokenizer learned 86 entries from `PLAN.md`: 4 specials and 82 characters. On the held-out file, `day-wise.md`, it produced 13,939 tokens for 13,939 bytes. That file is plain ASCII, so one character is one byte and one token.
+
+On an unseen Unicode sample, 77.8 percent of the characters mapped to `<|unk|>`.
+
+Then a small model trained on each tokenizer's output for the same 40 steps. With the character tokenizer, validation loss reached {last.validation_loss.toFixed(4)} nats per token, perplexity {last.validation_perplexity.toFixed(3)}, and {last.validation_bits_per_byte.toFixed(4)} bits per byte. Those three numbers come from `runs/day1-character.jsonl`. [Measuring a tokenizer](/posts/measuring-tokenizers/) sets them against BPE.
+
+Decision: keep it as the baseline. It was never meant to be the model's tokenizer.
+
+<Label>The problems</Label>
+
+## Why characters hurt, especially on code
+
+Day 1's paper exercise asked for three reasons character tokens hurt a model that reads code. The note records these:
+
+1. **Sequences get long.** Every character is a position. A 4-space indent is 4 positions, and `return` is 6. Attention costs grow with the square of the length, and the context window fills with syntax.
+2. **The model spends its capacity spelling.** To predict `values` after `sum(`, a character model must predict `v`, then `a`, then `l`, each a separate decision. A tokenizer that has `values` as one token makes that one decision.
+3. **Unknown characters destroy information.** The vocabulary is fixed at training time. A new symbol, an accented name or an emoji in a string literal becomes `<|unk|>`, and the model cannot read or write it.
+
+The small vocabulary has one real advantage. Every ID gets a lot of training data. The next tokenizer keeps that property for its base alphabet and fixes all three problems.
+
+<Figure label="Playground" caption="One text measured three ways. Edit it, or paste some indented code, and watch the attention cost of each sequence length.">
+  <SequenceLength client:visible />
+</Figure>
+
+<Label>The rules</Label>
+
+## What every octlm tokenizer must preserve
+
+`AGENTS.md` sets rules that both tokenizers follow, and tests enforce each one:
+
+- **Exact round trip.** Decoding the encoded text returns the same string. No lowercasing and no Unicode normalization, so `é` written as one code point and `é` written as `e` plus a combining accent stay different.
+- **Tabs, indentation and CRLF survive.** Code depends on whitespace.
+- **Stable IDs.** Special-token IDs never move between versions, and loading a tokenizer file whose specials differ fails.
+- **Ordinary text never becomes a special token.** The literal characters `<|eos|>` typed into a document are encoded as characters, never as ID 2. Otherwise a document could end itself early.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **A larger character vocabulary.** Training on more text would shrink the unknown rate, but no size of training text covers every character in Unicode. Bytes do, and BPE is built on bytes.
+- **Word-level tokens.** A word vocabulary has the unknown-token problem far worse than characters, and code is full of names no dictionary contains.
+
+<Callout hue="gray" title="Sources">
+  <p>The EXP-003 counts, the unknown rate and the three reasons come from <code>notes/day1.md</code>. The losses come from <code>runs/day1-character.jsonl</code>. The rules come from <code>AGENTS.md</code>.</p>
+</Callout>

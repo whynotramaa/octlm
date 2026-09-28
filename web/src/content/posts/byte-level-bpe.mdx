@@ -1,0 +1,165 @@
+---
+title: Byte-level BPE, merge by merge
+description: "Start from the 256 byte values, then repeatedly glue the most frequent adjacent pair into a new token. Nothing is ever unknown, and common fragments become single tokens."
+day: 1
+order: 2
+exps: ["EXP-004"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import PretokenView from "../../widgets/PretokenView.tsx";
+import BpeStepper from "../../widgets/BpeStepper.tsx";
+import tokenizer from "../../../fixtures/tokenizer.json";
+import { noteTable } from "../../lib/notes.ts";
+import Utf8Bytes from "../../widgets/Utf8Bytes.tsx";
+
+export const trace = noteTable(1, "What the paper exercises showed");
+
+The character tokenizer had two problems it could not fix: unknown characters, and one position per character. Byte pair encoding fixes the first by starting from bytes instead of characters, and the second by learning which runs of bytes appear together often enough to deserve their own token.
+
+This is the tokenizer every octlm model since Day 1 has used, and the one the Day 4 model uses at 8,192 entries.
+
+<Label>Step 1</Label>
+
+## Bytes, an alphabet with no unknowns
+
+Every string is stored as UTF-8 bytes, and a byte has 256 possible values. If the base vocabulary is those 256 values, every possible text has an encoding. An emoji is 4 bytes and becomes 4 byte tokens. A Japanese character is 3 bytes. Nothing maps to "unknown", so there is no unknown token.
+
+octlm's BPE vocabulary starts like this:
+
+| IDs | Meaning |
+| --- | --- |
+| 0 to 255 | One raw byte each |
+| 256 | `<\|pad\|>` |
+| 257 | `<\|bos\|>` |
+| 258 | `<\|eos\|>` |
+| 259 | `<\|tool_call\|>`, reserved for the tool-use work on Day 7 |
+| 260 | `<\|tool_result\|>`, reserved for the same |
+| 261 onward | Learned merges, in the order they were learned |
+
+The two tool tokens are reserved now so their IDs never move. Changing a special-token ID after training would silently change what a checkpoint means.
+
+The cost of bytes is length. Plain bytes make sequences even longer than characters for non-ASCII text. Merges fix that.
+
+<Figure label="Playground" caption="Type any characters. Each one becomes 1 to 4 bytes, and each byte is one of the 256 base token IDs.">
+  <Utf8Bytes client:visible />
+</Figure>
+
+<Label>Step 2</Label>
+
+## Pre-tokenization decides where merges may not cross
+
+Before learning merges, octlm cuts the text into chunks at every change of character type. There are four types: whitespace, word characters (letters, combining marks and `_`), digits, and everything else.
+
+<Figure label="Playground" caption="Click or hover a chunk to see its bytes. Colors show the character type of each run. BPE only ever merges bytes inside one chunk.">
+  <PretokenView client:visible />
+</Figure>
+
+### What happened?
+
+- `x_1` splits into `x_` and `1`. The underscore counts as a word character, so it stays with the name, and the digit starts a new chunk.
+- Whitespace runs such as `\n\t` and `\r\n` each stay one chunk, byte for byte, so indentation and Windows line endings round-trip.
+- In the Unicode preset, `é` written as `e` plus a combining accent stays one word chunk, because a combining mark counts as a word character. Nothing is normalized.
+- The literal text `<|eos|>` splits into `<|`, `eos`, `|>`. It is ordinary text made of ordinary bytes, never ID 258.
+
+Why cut at all? Without boundaries, the most frequent pairs in English include a letter followed by a space or a period, and BPE would learn tokens like `e.` and `d ` that mix a word with punctuation. The GPT-2 tokenizer cuts at similar boundaries for the same reason. Chunks also keep each document separate: octlm never merges across two documents.
+
+<Source file="octlm/tokenizer.py" symbol="_kind" />
+
+<Label>Step 3</Label>
+
+## Training glues the most frequent pair, then repeats
+
+Training starts with each chunk as a list of byte IDs, and counts each distinct chunk once with its frequency. Then it loops:
+
+1. Count every adjacent pair of IDs inside every chunk, weighted by how often that chunk occurs.
+2. Pick the pair with the highest count. On a tie, pick the pair with the smallest left ID, then the smallest right ID.
+3. Give the pair the next free ID, starting at 261.
+4. Replace every occurrence of the pair with the new ID.
+5. Stop when the vocabulary reaches its target size, or when the best pair occurs fewer than 2 times.
+
+The tie rule matters more than it looks. Two runs over the same text must learn the same merges in the same order, or two tokenizers with the same settings would disagree about what ID 400 means. Picking by `(-count, pair)` makes the order total, so the result never depends on dictionary iteration order.
+
+The stop rule matters too. A pair that occurs once teaches the tokenizer nothing it could reuse, and a merge for it would waste a vocabulary slot.
+
+<Figure label="Playground" caption="Step through the merges on the text below, or paste your own. The table on the left is the pair count that decides the next merge. This is the text the parity test trains on, and the test checks that this page learns the same merges as octlm's Python code.">
+  <BpeStepper client:visible text={tokenizer.bpe.text} />
+</Figure>
+
+### What happened?
+
+- The first merge is two spaces, and the third is two of those. Indentation repeats on every line, so whitespace pairs have the highest counts.
+- Later merges build on earlier ones. A merge's two sides can be learned tokens, so `total` is built as `ot`, then `tot`, then `total`, and `total_number` arrives near the end.
+- Some merges look odd, like a fragment of two words. BPE counts pairs, not meaning. A later merge usually absorbs the odd piece into a full name.
+- The token count falls with each merge and bytes per token rises. At some step the best pair occurs once, and training stops before the target size.
+
+Here is the actual training loop:
+
+<Source file="octlm/tokenizer.py" symbol="ByteBPETokenizer.train" />
+
+`min(counts, key=lambda item: (-counts[item], item))` is the tie rule in one line. The loop recounts every pair after every merge. That is simple to check and slow at scale, which comes back below.
+
+<Label>Step 4</Label>
+
+## Encoding replays the merges in the order they were learned
+
+To encode new text, octlm pre-tokenizes it, turns each chunk into bytes, and then applies merges by rank. Among the pairs present in the chunk, it merges the one learned earliest, and repeats until no pair in the chunk has a merge.
+
+<Source file="octlm/tokenizer.py" symbol="ByteBPETokenizer.encode_chunk" />
+
+Rank order is what makes encoding match training. The merges were learned in that order, so applying them in that order rebuilds the same tokens the training text produced. Decoding is simpler. Every ID maps to a fixed byte string, and the bytes concatenate.
+
+<Label>The paper exercise</Label>
+
+## Twenty merges traced by hand
+
+Day 1's reading plan asked for 20 merges traced on a Python function. The note records the first 20 on one function repeated, using the same code path. IDs start at 261 because 256 to 260 are specials.
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Merge</th><th>Input IDs</th><th>New ID</th><th>Bytes after the merge</th></tr></thead>
+  <tbody>
+    {trace.map((row) => (
+      <tr><td>{row["Merge"]}</td><td><code>{row["Input IDs"]}</code></td><td>{row["New ID"]}</td><td>{row["Bytes after the merge"]}</td></tr>
+    ))}
+  </tbody>
+</table>
+</div>
+
+Merge 5 is `109 + 264`, byte `m` plus token 264, which is `be` from merge 4. Merges 6 to 8 grow that into `_number`. Merge 16 creates `btotal`, a piece that spans the end of one name and the start of another inside the same chunk. The table is parsed from `notes/day1.md` when this site builds.
+
+<Label>EXP-004</Label>
+
+## What we measured
+
+Problem: the character tokenizer produced one token per byte on English and 77.8 percent unknowns on Unicode.
+
+Hypothesis: a byte-level BPE trained on the same `PLAN.md` compresses the held-out text and represents every sample byte.
+
+- The 1,024-entry tokenizer encoded the 13,939-byte held-out file in 7,319 tokens, 1.90 bytes per token against 1.00 for characters.
+- A Python sample shrank from 49 tokens to 35.
+- Every byte of the Unicode sample was represented. The unknown rate is 0 by construction.
+- A 2,048-entry request stopped at 1,708 entries, because no remaining pair occurred twice. `PLAN.md` was too small to earn more merges.
+
+Decision: keep the 1,024-entry tokenizer for the Day 1 model. The note is explicit that this did not choose the final vocabulary. Day 2 trained a 2,048-entry tokenizer on a larger corpus, and Day 4 an 8,192-entry one on TinyStories.
+
+<Label>The cost</Label>
+
+## A full recount per merge
+
+Recounting every pair after every merge costs time proportional to the number of distinct chunks, times the number of merges. On Day 1's 111 KB that took seconds. Day 2 measured it before training on 7 MB: 2.7 seconds for 142 KB at 512 entries, 57 seconds for 702 KB at 2,048 entries. The cost tracked the 11,665 distinct chunks in that sample, not the raw bytes. Day 2 therefore trained on every tenth document. Day 4 trained on the first 10 million characters of TinyStories, which took 303 seconds, and then added a [chunk cache](/posts/tinystories-and-the-encoder/) to make encoding fast.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **Incremental pair counting.** Production trainers update only the counts a merge touched. The measured cost never blocked a run, so the simple loop stayed.
+- **GPT-2's regex pre-tokenizer.** It also splits contractions like `'s` and keeps a leading space on words. The four-type rule is shorter to state and test, and it keeps code whitespace intact.
+- **A pretrained tokenizer.** `AGENTS.md` requires merges learned from our own training data. The one exception is Qwen on Day 6, whose tokenizer ships with its weights.
+
+<Callout hue="gray" title="Sources">
+  <p>Sennrich et al., <a href="https://aclanthology.org/P16-1162/">Neural Machine Translation of Rare Words with Subword Units</a>, for pair merges building a fixed subword vocabulary. The <a href="https://cdn.openai.com/better-language-models/language-models.pdf">GPT-2 report</a> and its <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">encoder source</a> for byte-level BPE and category boundaries. EXP-004 numbers and the 20-merge table from <code>notes/day1.md</code>. Training-cost numbers from <code>notes/day2.md</code> and <code>notes/day4.md</code>.</p>
+</Callout>

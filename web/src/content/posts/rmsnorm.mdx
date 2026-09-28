@@ -1,0 +1,94 @@
+---
+title: RMSNorm against LayerNorm
+description: "RMSNorm drops LayerNorm's mean subtraction and its bias. On Day 2 it matched LayerNorm's quality inside the noise and ran slower, for a reason that had nothing to do with arithmetic."
+day: 2
+order: 3
+exps: ["EXP-010"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import NormPlay from "../../widgets/NormPlay.tsx";
+import GridChart from "../../widgets/GridChart.tsx";
+import { variantGrid } from "../../lib/notes.ts";
+import NormOps from "../../widgets/NormOps.tsx";
+
+export const grid = variantGrid();
+export const row = (name) => grid.find((r) => r.variant === name);
+export const pct = (a, b) => (((a - b) / b) * 100).toFixed(1);
+
+LayerNorm does two things to a vector. It subtracts the mean, and it divides by the standard deviation. The RMSNorm paper asked whether the first is needed. LLaMA, Qwen and most current decoders answer no, and use RMSNorm. EXP-010 swapped it into the Day 1 baseline and changed nothing else.
+
+<Label>Definition</Label>
+
+## Divide by the root mean square, keep a gain
+
+RMSNorm divides each vector by its root mean square and multiplies by a learned gain $g$:
+
+$$
+\operatorname{RMSNorm}(x) = g \odot \frac{x}{\sqrt{\tfrac{1}{C}\sum_i x_i^2 + \epsilon}}
+$$
+
+Compare LayerNorm, $\gamma \odot (x - \mu)/\sigma + \beta$. RMSNorm has no $\mu$ and no $\beta$. If the mean happens to be 0, the root mean square equals the standard deviation and the two agree exactly, apart from the bias.
+
+The paper's argument is that LayerNorm's benefit comes from the rescaling, which makes a layer's output independent of how large its input is. Re-centering is the part it can drop.
+
+<Figure label="Playground" caption="The same six-number vector through both norms, gain 1, no bias. Use the buttons to shift or scale every entry.">
+  <NormPlay client:visible initial="both" />
+</Figure>
+
+### What happened?
+
+- "Double every entry" leaves both outputs unchanged. Both norms are invariant to scale.
+- "Add 1 to every entry" leaves LayerNorm unchanged and moves RMSNorm. RMSNorm is not invariant to a shift, so its output mean is whatever the input's shape makes it.
+- When the input mean is near 0, the two outputs nearly coincide.
+
+<Figure label="Diagram" caption="The operations each norm applies to one vector, in order.">
+  <NormOps />
+</Figure>
+
+<Label>In octlm</Label>
+
+## Eight lines, statistic in float32
+
+<Source file="octlm/model.py" symbol="RMSNorm" />
+
+`rsqrt` is one over the square root. The statistic is computed in float32 even when the activations are half precision, because squaring small half-precision numbers loses too much. The gain starts at 1, and `make_norm` picks LayerNorm or RMSNorm from the config's `norm` switch.
+
+The paper keeps an optional bias term. LLaMA's version has a gain only, and octlm follows LLaMA. The note records that the bias variant was not tested.
+
+<Label>EXP-010</Label>
+
+## Same quality, 8.9 percent slower
+
+Hypothesis: RMSNorm matches LayerNorm's quality and is faster. The paper reports speedups from 7 to 64 percent across models and 6.9 to 9.3 percent on a Transformer.
+
+The test is one row of the Day 2 variant grid, with 3.3 million parameters, 400 steps, three seeds per variant, on a Colab T4. [Reading the grid](/posts/reading-the-grid/) explains the grid and its noise.
+
+<Figure label="Measured" caption="Mean bits per byte over three seeds. The bar is the spread across seeds, drawn centered on the mean. The gray band is the baseline's own seed spread: a gap inside it is noise at this budget. Hover a row for its numbers.">
+  <GridChart client:visible rows={grid} highlight={["baseline", "rmsnorm"]} />
+</Figure>
+
+### What happened?
+
+- On code, RMSNorm is {(row("rmsnorm").code - row("baseline").code).toFixed(4)} bits per byte from the baseline. The baseline alone moves {row("baseline").codeSpread} across three seeds, so the difference is about 30 times smaller than the noise.
+- On prose the difference is {(row("rmsnorm").prose - row("baseline").prose).toFixed(4)}, also far inside the noise.
+- It saves {(row("baseline").parameters - row("rmsnorm").parameters).toLocaleString("en-US")} parameters, one bias vector of 256 in each of 9 norms.
+- It is {pct(row("rmsnorm").secondsPerStep, row("baseline").secondsPerStep)} percent slower per step.
+
+The slowdown is the opposite of the paper's result, and the note explains it. PyTorch's `LayerNorm` is one fused GPU kernel. octlm's RMSNorm is a chain of separate tensor operations (square, mean, reciprocal square root, two multiplies), and each one reads and writes the whole activation. At width 256 the norm is a noticeable share of each block, so the extra memory traffic shows. The paper counts arithmetic saved. The measurement counts which kernels the framework provides. Both are true, and the second one decides what a config should use.
+
+Decision: no standalone keep. RMSNorm rides inside the `modern` stack, the combination Day 4 trains, where it matches the Qwen architecture Day 6 has to load. Re-measure its speed at width 512 and above before calling the slowdown general.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **A fused RMSNorm kernel.** Recent PyTorch releases ship `torch.nn.RMSNorm`, and `torch.compile` can fuse the plain version. Either would need its own speed measurement, and at this model size the norm's speed decides nothing.
+- **The bias variant.** Recorded as untested.
+
+<Callout hue="gray" title="Sources">
+  <p>Zhang and Sennrich, <a href="https://arxiv.org/abs/1910.07467">Root Mean Square Layer Normalization</a>, for the definition, the invariance argument and the reported speedups. Touvron et al., <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, for the gain-only form. The grid numbers are parsed from the variant-grid table in <code>notes/day2.md</code>, because the grid's JSONL did not come back from the Colab VM.</p>
+</Callout>

@@ -1,0 +1,94 @@
+---
+title: Why the plan changed
+description: "On 2026-09-23 the project stopped before its Day 3 runs and rewrote its plan. Two facts forced it. The Day 2 models had seen about 1 percent of the data they needed, and no model this lab can pretrain could drive a tool-use harness."
+day: 3
+order: 5
+exps: []
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Callout from "../../components/Callout.astro";
+import ComputeEstimator from "../../widgets/ComputeEstimator.tsx";
+import PlanMap from "../../widgets/PlanMap.tsx";
+import { retired } from "../../lib/roadmap.ts";
+
+export const presets = [
+  { name: "Day 2 grid", parameters: 3740160, tokens: 819200 },
+  { name: "Day 3 plan", parameters: 3740160, tokens: 4096000 },
+  { name: "Day 4 main run", parameters: 26255872, tokens: 393216000 },
+  { name: "50M", parameters: 50e6, tokens: 1e9 },
+  { name: "150M", parameters: 150e6, tokens: 3e9 },
+];
+export const rows = retired();
+
+The first plan aimed to pretrain a 50 to 150 million parameter model and grow it, over 64 experiments, into a local coding and writing assistant. Day 3 had four experiments built and ready for a GPU. Before the first run, the question came up whether the project was on the right track. Working through our own numbers said it was not.
+
+<Label>Fact 1</Label>
+
+## The Day 2 models were starved of data
+
+Hoffmann et al. found that for a fixed compute budget, the best loss comes from training on about 20 tokens per parameter. Fewer tokens means a larger model than the budget can use.
+
+The Day 2 grid trained models of about 3.3 million parameters for 400 steps of 8 blocks of 256 tokens, 819,200 tokens each. That is about 0.25 tokens per parameter, 1 percent of the compute-optimal budget. The Day 3 plan raised the steps fivefold, to 4.1 million tokens, which is still about 1.1 tokens per parameter. Its long-context config reached 8.2 million tokens, and the whole Day 2 corpus holds 2.96 million, so it would have repeated data.
+
+That explains [the Day 2 grid](/posts/reading-the-grid/). A seed spread of 0.043 bits per byte, larger than most of the effects being measured, is what an undertrained model looks like. Where it ends up depends heavily on where it started. Stage 0 would have measured that spread again, at a budget still about 18 times too small.
+
+<Figure label="Playground" caption="Training compute is about 6 × parameters × tokens: 2 for the forward pass and 4 for the backward pass, per parameter per token. Time assumes one T4 at a sustained throughput. Presets are the runs this project did or considered.">
+  <ComputeEstimator client:visible presets={presets} measured={4.1} assumed={15} />
+</Figure>
+
+### What happened?
+
+- The Day 2 grid is at about 1 percent of its optimal token budget. The Day 3 plan is at about 5 percent.
+- The Day 4 main run, 26 million parameters on 393 million tokens, reaches about 15 tokens per parameter. That is close enough to read results.
+- Switch the throughput between the planned 15 TFLOPs and the 4.1 that EXP-066 measured on a real T4. At the measured rate the Day 4 run takes about 4 hours, a 50M model at 1 billion tokens takes about 20, and a 150M model is out of reach.
+
+That last row is why pretraining stops near 20 million parameters.
+
+<Label>Fact 2</Label>
+
+## The goal needs a model that follows instructions
+
+The project's goal, in the user's words, is to learn machine learning "in depth" for placement season and to end with "a harness that can control my own model". A harness shows the model a task and some tools, parses each tool call it emits, runs the tool, and feeds back the result. That needs a model that follows instructions and produces well-formed tool calls. No model that can be pretrained on free Colab does either.
+
+<Label>The decision</Label>
+
+## Keep the from-scratch model, then move the same code to Qwen
+
+The new plan has two halves:
+
+1. **Train the from-scratch model once, properly.** About 20 million parameters, on TinyStories, with the Day 2 `modern` stack. TinyStories is a dataset on which models under about 30 million parameters write coherent English, and the run fits the measured compute. This is Day 4 and Day 5.
+2. **Load Qwen into the same model code.** `octlm/model.py` already has RoPE, RMSNorm, SwiGLU and grouped-query attention, the same parts Qwen uses. Match its logits, write LoRA, fine-tune it for tool calls, and build the harness and its eval around it. This is Day 6 to Day 9.
+
+Two alternatives were rejected. Continuing the first plan spends the remaining time on variants the harness never uses and ends with a model too weak to drive it. Fine-tuning Qwen with an off-the-shelf trainer gives the harness a working model and leaves nothing to explain when an interviewer asks how attention, the KV cache or LoRA work.
+
+<Label>What was dropped</Label>
+
+## Where each first-plan experiment went
+
+Every first-plan experiment got a new number, a merge into another experiment, or a reason it was dropped. New numbers start at EXP-065, so no number ever means two things. The table is read from `notes/day3.md` when the site builds.
+
+<Figure label="Map" caption="Every first-plan experiment and where it went, read from notes/day3.md. Filter by outcome.">
+  <PlanMap client:visible rows={rows} />
+</Figure>
+
+The dropped groups share reasons:
+
+- **MoE, MLA, sparse and compressed attention, Muon, mHC and the DeepSeek-style runs** do not serve the harness. The built Day 3 code stays behind default-off flags.
+- **DDP, FSDP, tensor and pipeline parallelism** need more than one GPU. The free tiers give one.
+- **Pretraining at 50 to 150 million parameters, and the scaling check,** are ruled out by the compute table above.
+- **DPO and the reward model.** Supervised fine-tuning on harness traces is the post-training the eval can measure.
+- **Retrieval, the writing assistant, the cache stack, batching and speculative decoding.** The harness uses `grep` for retrieval and serves one request at a time.
+
+<Label>The rules</Label>
+
+## Conflicts the change created, and how they were recorded
+
+`AGENTS.md` forbids starting a day before every exit check of the previous day passes. None of Day 3's passed. The user's request outranks the plan, so the Day 3 checks were recorded as withdrawn, not failed, and Day 4 starts from Day 2's passed checks.
+
+`AGENTS.md` also says every tokenizer learns its merges from our own data. Qwen's tokenizer ships with its weights. The rule keeps applying to every tokenizer octlm trains. For Qwen, the checkpoint loader applies the hash check to `tokenizer.json` instead.
+
+<Callout hue="gray" title="Sources">
+  <p>Hoffmann et al., <a href="https://arxiv.org/abs/2203.15556">Training Compute-Optimal Large Language Models</a>, for about 20 tokens per parameter. Eldan and Li, <a href="https://arxiv.org/abs/2305.07759">TinyStories</a>, for coherent stories under 30M parameters. Kaplan et al., <a href="https://arxiv.org/abs/2001.08361">Scaling Laws for Neural Language Models</a>, for 6N FLOPs per token. The decision, the rejected alternatives and the table come from the 2026-09-23 session in <code>notes/day3.md</code>. The measured 4.1 TFLOPs comes from EXP-066 in <code>notes/day4.md</code>.</p>
+</Callout>

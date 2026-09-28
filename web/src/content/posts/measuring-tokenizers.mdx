@@ -1,0 +1,110 @@
+---
+title: Measuring a tokenizer
+description: "The BPE model scored a perplexity eight times worse than the character model and was the better model. Bits per byte is the unit that makes the two comparable."
+day: 1
+order: 3
+exps: ["EXP-003", "EXP-004"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Callout from "../../components/Callout.astro";
+import LineChart from "../../charts/LineChart.tsx";
+import BpbCompare from "../../widgets/BpbCompare.tsx";
+import character from "../../data/runs/day1-character.json";
+import bpe from "../../data/runs/day1-bpe.json";
+import EquivalentLoss from "../../widgets/EquivalentLoss.tsx";
+
+export const c = character[character.length - 1];
+export const b = bpe[bpe.length - 1];
+export const runs = [
+  { name: "Character", loss: c.validation_loss, tokens: c.validation_tokens, bpb: c.validation_bits_per_byte },
+  { name: "BPE 1,024", loss: b.validation_loss, tokens: b.validation_tokens, bpb: b.validation_bits_per_byte },
+];
+export const curve = (records, key) => records.map((r) => [r.step, r[key]]);
+
+Day 1 trained the same small model twice for the same 40 steps, once on character tokens and once on BPE tokens, and evaluated both on the same held-out file. Read by loss or perplexity, the character model won by a wide margin. Read by bits per byte, BPE won. Only one of those readings is a fair comparison.
+
+<Label>The result</Label>
+
+## Two models, three metrics, opposite verdicts
+
+| Tokenizer | Validation loss | Perplexity | Bits per byte |
+| --- | ---: | ---: | ---: |
+| Character | {c.validation_loss.toFixed(4)} | {c.validation_perplexity.toFixed(3)} | {c.validation_bits_per_byte.toFixed(4)} |
+| BPE, 1,024 entries | {b.validation_loss.toFixed(4)} | {b.validation_perplexity.toFixed(3)} | {b.validation_bits_per_byte.toFixed(4)} |
+
+All six numbers come from `runs/day1-character.jsonl` and `runs/day1-bpe.jsonl` at step 40.
+
+<Figure label="Measured" caption="Validation at steps 20 and 40, the only two evaluations each run made. Left: loss per token. Right: bits per byte. The order of the two lines flips.">
+  <div class="two-col">
+    <LineChart client:visible title="Loss per token (nats)" series={[{ name: "character", points: curve(character, "validation_loss"), slot: 1 }, { name: "BPE", points: curve(bpe, "validation_loss"), slot: 2 }]} x={{ label: "step", ticks: [20, 40] }} y={{ label: "nats per token" }} markers height={300} />
+    <LineChart client:visible title="Bits per byte" series={[{ name: "character", points: curve(character, "validation_bits_per_byte"), slot: 1 }, { name: "BPE", points: curve(bpe, "validation_bits_per_byte"), slot: 2 }]} x={{ label: "step", ticks: [20, 40] }} y={{ label: "bits per byte" }} markers height={300} />
+  </div>
+</Figure>
+
+<Label>Why</Label>
+
+## A token is a different amount of text in each model
+
+The character model predicts one byte per step. The BPE model predicts almost two bytes per step on this file, because a BPE token covers 1.90 bytes on average. Predicting two bytes at once is harder than predicting one, so the loss per prediction is naturally higher. Comparing per-token loss across tokenizers compares predictions of different sizes.
+
+Bits per byte removes the size. Take the total loss across the whole file, which is the information the model needed for that file, and divide by the file's bytes:
+
+$$
+\operatorname{bpb} = \frac{\mathcal{L}_{\text{token}} \cdot N_{\text{tokens}}}{\ln 2 \cdot N_{\text{bytes}}} = \frac{\mathcal{L}_{\text{token}}}{\ln 2} \cdot \frac{1}{\text{bytes per token}}
+$$
+
+Both models describe the same bytes, so this asks both the same question. How many bits does the model need per byte of this text?
+
+Plug in the character model. One byte per token, so bits per byte is the loss divided by $\ln 2$. For BPE, the per-token loss is larger, but each token pays for almost two bytes, and the division brings it under the character model.
+
+<Figure label="Playground" caption="The two runs, starting at their measured losses. Drag either loss and watch perplexity and bits per byte. The token and byte counts are fixed by each tokenizer's split of the validation text.">
+  <BpbCompare client:visible runs={runs} />
+</Figure>
+
+### What happened?
+
+- At the measured losses, perplexity prefers the character model and bits per byte prefers BPE. The verdict line says which.
+- Lower the BPE loss until its perplexity beats the character model. The BPE loss has to fall below the character model's loss, and by then its bits per byte is about half the character model's.
+- The token count is where the difference lives. BPE used about half as many predictions for the same text.
+
+<Figure label="Playground" caption="Hold the model's quality fixed in bits per byte and change only the tokenizer. The loss per token that means the same quality moves along the line.">
+  <EquivalentLoss client:visible />
+</Figure>
+
+<Label>Decision</Label>
+
+## Compare tokenizers only in bits per byte
+
+After 40 steps, BPE improved bits per byte by 15.4 percent over the character model. That kept BPE for the Day 1 model and made a rule that every later comparison follows. Perplexity is fine inside one tokenizer, and across tokenizers only bits per byte counts. `AGENTS.md` carries the rule for the rest of the project.
+
+The comparison has limits the note states. Forty steps on a tiny model and a tiny file says the direction, not the size, of the effect at scale. It does not choose a vocabulary size either. That choice needs two full training runs, which is why Day 4 took 8,192 entries from the TinyStories paper's 10K and recorded it as a choice rather than a result.
+
+<Label>Compression</Label>
+
+## Bytes per token, the other number to track
+
+Bytes per token measures compression, and it changes with the text, not only the tokenizer.
+
+| Tokenizer | Text | Bytes per token |
+| --- | --- | ---: |
+| Character, Day 1 | `day-wise.md` | 1.00 |
+| BPE 1,024, Day 1 | `day-wise.md` | 1.90 |
+| BPE 2,048, Day 2 | code and prose corpus, Colab build | 2.32 |
+| BPE 8,192, Day 4 | TinyStories | 2.26 |
+
+The Day 2 row is the inverse of the 0.431 tokens per byte that `notes/day2.md` records. The Day 4 vocabulary is four times larger but compresses TinyStories less than Day 2's compressed its corpus. TinyStories has a small, simple vocabulary, and words are short. More merges cannot make a three-letter word longer than one token.
+
+Better compression is good for speed, because a context window holds more text. It is not the same as a better model. Bits per byte is the model's number. Bytes per token is the tokenizer's.
+
+<Label>Skipped</Label>
+
+## What we did not measure, and why
+
+- **The final vocabulary size.** Two planning documents suggested 16K to 32K. A choice like that needs trained models at each size, and Day 1 measured only what its small corpus could support.
+- **Per-token perplexity across tokenizers.** Recorded in the runs and never used to compare them.
+
+<Callout hue="gray" title="Sources">
+  <p>The metric decision and the 15.4 percent figure come from <code>notes/day1.md</code>. The losses come from <code>runs/day1-character.jsonl</code> and <code>runs/day1-bpe.jsonl</code>. Compression figures come from <code>notes/day1.md</code>, <code>notes/day2.md</code> and the EXP-065 table in <code>notes/day4.md</code>.</p>
+</Callout>

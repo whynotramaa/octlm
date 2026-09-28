@@ -1,0 +1,84 @@
+---
+title: Sparse attention
+description: "A sliding window lets each token read only its recent neighbors, and strided columns add a few long-range links. The masks are built and tested, and the run was dropped when the plan changed."
+day: 3
+order: 2
+exps: ["EXP-017"]
+measured: false
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import MaskBuilder from "../../widgets/MaskBuilder.tsx";
+import SparseCost from "../../widgets/SparseCost.tsx";
+
+Full causal attention compares every token with every earlier token. The work and the score memory both grow with $T^2$, and in a trained model most of those scores end up near zero. Sparse attention decides in advance which scores to skip. The question for EXP-017 was what that costs on code, which refers further back than prose: a variable defined 200 lines up is still in scope.
+
+<Label>Definition</Label>
+
+## A window, plus a few global columns
+
+A sliding window of size $w$ lets query $i$ read keys $j$ with $0 \le i - j < w$. Each row has at most $w$ allowed scores, so the cost grows with $T \cdot w$ instead of $T^2$. Longformer and Mistral use this pattern.
+
+A window loses everything older than $w$. A stride $s$ adds some of it back cheaply. Every key whose position is a multiple of $s$ stays visible to all later queries. Those columns act as landmarks that any token can reach.
+
+$$
+\text{allowed}(i, j) = (j \le i) \wedge \big( i - j < w \;\vee\; j \bmod s = 0 \big)
+$$
+
+<Figure label="Playground" caption="The mask octlm builds, row by row. Filled cells are allowed scores, hatched cells are skipped. Density is the share of the full causal triangle that remains. A test checks this mask and its density against octlm's attention_mask and mask_density.">
+  <MaskBuilder client:visible />
+</Figure>
+
+### What happened?
+
+- With the window at 0 the mask is the full causal triangle, density 100 percent.
+- A window of 4 turns it into a band. The last row reads only 4 keys, and density falls as the sequence grows, because the band's width is fixed while the triangle's area grows with $T^2$.
+- A stride adds vertical stripes. Every $s$-th column stays visible all the way down.
+
+<Label>In octlm</Label>
+
+## One mask function for every pattern
+
+The Day 1 causal mask and the Day 3 sparse masks come from the same function. With `window = 0` it returns the plain triangle:
+
+<Source file="octlm/model.py" symbol="attention_mask" />
+
+The model passes that mask as a boolean `attn_mask` into `scaled_dot_product_attention`. That is correct on every backend and every device, and it has a cost the note wrote down as a measurement rather than a defect. The moment an explicit mask replaces `is_causal=True`, SDPA can no longer use the flash kernel on CUDA and falls back to a slower backend. PyTorch's `flex_attention` can compile a block-sparse mask into a fast kernel, but it needs `torch.compile`, and chasing it was not what EXP-017 was for.
+
+A small probe, `flash_accepts`, records which backend actually ran. It must run on the training device, because PyTorch's CPU flash path accepts an explicit mask and the CUDA kernel does not, so a probe on the laptop would report the wrong backend for a GPU run.
+
+<Figure label="Playground" caption="Scores computed per head as the sequence grows, exact counts from the mask rule above. Both axes are logarithmic, base 2.">
+  <SparseCost client:visible />
+</Figure>
+
+<Label>The hypothesis</Label>
+
+## Worse on code, and no faster at this length
+
+The note's hypothesis had two parts:
+
+1. At a 512-token trained context, a 128-token window loses measurable bits per byte on code and less on prose.
+2. The windowed run is no faster than full causal. Losing the flash kernel costs more than the skipped scores save at 512 tokens. The speed win belongs to lengths this lab had not trained at.
+
+Baseline: full causal attention at the same budget and context. Stop condition: windows of 128 and 256, strides of 0 and 64, three seeds, reporting code and prose bits per byte, seconds per step, the backend that ran and the computed density.
+
+<Label>Status</Label>
+
+## Built, tested, not scheduled
+
+The plan changed before any Day 3 run. None of the sparse patterns serve the tool-use harness the new plan builds toward. The code stays behind flags that default to off, so every other model is unaffected, and the tests for the masks still run.
+
+<Label>Skipped</Label>
+
+## What we did not build, and why
+
+- **`flex_attention` kernels.** Needs `torch.compile`, and the Day 3 GPU is a T4, where the gain was untested.
+- **Dilated or random patterns.** The window and stride answered the question the plan asked.
+- **The read on how Longformer and Mistral choose a window size.** Listed in the note as still to read, and not read before the plan changed.
+
+<Callout hue="gray" title="Sources">
+  <p>Beltagy et al., <a href="https://arxiv.org/abs/2004.05150">Longformer</a>, and Jiang et al., <a href="https://arxiv.org/abs/2310.06825">Mistral 7B</a>, for sliding-window attention. The backend decision, the hypothesis and the probe come from <code>notes/day3.md</code>.</p>
+</Callout>
