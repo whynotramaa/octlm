@@ -1,0 +1,77 @@
+---
+title: Multi-token prediction at 26 million parameters
+description: "A second head predicts two tokens ahead. Three matched T4 runs made next-token quality worse by 0.0188 bits per byte and cost 11% more training time, so the default model keeps one head."
+day: 5
+order: 2
+exps: ["EXP-070"]
+measured: true
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import MtpHeads from "../../widgets/MtpHeads.tsx";
+import MtpDesigns from "../../widgets/MtpDesigns.tsx";
+import mtp from "../../data/runs/mtp.json";
+
+So say the model just read “Lily found a”. The usual head guesses the next piece, “ key”. Now a second head tries to guess one piece further, “ in”, and it has to do that from the **same** hidden state. Slide through the example below, the two target rows move together until the second target runs off the end of the block.
+
+<Figure label="Playground" caption="Word-piece tokens from a short story, just for illustration, this is not the actual BPE split. Pick an input position and a depth to see the targets and the cost of the 512-wide adapter.">
+  <MtpHeads client:visible width={512} tokens={["Lily", " found", " a", " key", " in", " the", " garden", ".", " She", " smiled", "."]} />
+</Figure>
+
+<Label>What the rows mean</Label>
+
+## One trunk, two different guesses
+
+The normal model predicts $x_{t+1}$ from hidden state $h_t$. Depth 2 asks a second head to predict $x_{t+2}$ from that same state. The training loss averages the valid targets of both heads, the second head has no target at the last input position, and PAD targets are excluded. For validation we only report the **next-token head** against the single-head control, because if we scored the average two-head loss against a one-head loss we'd be answering a different question.
+
+The second head needs its own transformation, and this one is easy to get wrong. If it used the same tied output matrix on the same hidden state it would produce the exact same logits, so it would just repeat the next-token prediction. So octlm adds one bias-free 512 × 512 linear adapter and then reuses the tied output matrix. That's 262,144 extra parameters, about 1 percent of the modern trunk. The paper's independent future heads use a full Transformer layer, octlm's adapter is cheaper and tests a smaller change, so I shouldn't call this a paper reproduction, it isn't one.
+
+<Figure label="Playground" caption="Switch between the paper's parallel heads, DeepSeek's sequential modules, octlm's linear adapter and the broken all-tied idea. The diagram shows why the extra map matters.">
+  <MtpDesigns client:visible />
+</Figure>
+
+<Label>Why come back to it ?</Label>
+
+## The earlier run was never evidence
+
+Day 2's 3.3M models trained on just 819,200 tokens. Day 3 planned more tokens but still way less than a data-efficient run. We built and tested the MTP implementation, and then the architecture lab stopped before its GPU stage. So there is no Day 3 quality result or draft-agreement result to carry forward, nothing. The paper says MTP gains grow with model size, and that's a reason to test at 26M, not a prediction that this model will win.
+
+Day 5 uses the three modern seeds from [EXP-069](/posts/seed-spread-at-scale/) as the control. MTP runs the same three seeds, same tokenizer, same TinyStories token stream, 512-token context, 6,000 steps and the same held-out blocks. The only planned change is `mtp_depth = 2`. EXP-069 finished on 2026-09-30 and froze the threshold before any MTP run started, modern's control mean is 0.5539 bits per byte and the larger seed spread is **0.0050**. So MTP has to beat 0.5539 by more than 0.0050 to count. We fix the number first so we can't pick a threshold after seeing the MTP results.
+
+<Source file="octlm/day5.py" symbol="stage_mtp" />
+
+<Label>Two measurements</Label>
+
+## Quality and draft agreement are different questions
+
+Bits per byte of the next-token head asks, did the shared trunk learn a better language model ? The report also includes parameters and seconds per training step, because the extra loss and the extra projection aren't free. Depth-2 top-1 accuracy asks something else, how often is the head's best guess the true token two positions ahead on held-out blocks. A high rate could justify looking into draft verification, but it doesn't make the current generator faster by itself. octlm has no speculative verifier and no speculative speed result, just to be clear.
+
+<Source file="octlm/day3.py" symbol="mtp_agreement" />
+
+We can't use raw token perplexity across different tokenizers for this. Both Day 5 variants use the same tokenizer anyway, but bits per byte also ties this experiment to the earlier reports without switching units.
+
+<Label>Where it stands</Label>
+
+## Three trained seeds lose beyond the noise
+
+`octlm.day5 mtp` refuses to run if any requested EXP-069 control seed is missing. It checks the input hashes, trains only missing seeds, and reports both means against the frozen threshold. All three T4 runs finished on 2026-09-30 with matching config, data, and tokenizer hashes and 98,304,000 tokens per run.
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Seed</th><th>Next-token bits per byte</th><th>Depth-2 accuracy</th><th>Seconds per step</th></tr></thead>
+  <tbody>{mtp.map((row) => <tr><td>{row.seed}</td><td>{row.bits_per_byte.toFixed(6)}</td><td>{(row.depth2_top1_accuracy * 100).toFixed(2)}%</td><td>{row.seconds_per_step.toFixed(4)}</td></tr>)}</tbody>
+</table>
+</div>
+
+MTP averages 0.572688 bits per byte against the control's 0.553899. The regression is 0.018788, 3.77 times the frozen threshold. Every MTP seed is worse than every control seed. The second head adds 262,144 parameters and costs 10.95% more training time per step. Its mean depth-2 accuracy is 73.08%, which measures the true future token and proves no speculative decoding speedup.
+
+Decision: keep `mtp_depth = 1` as the default. The measured adapter stays behind the depth-2 flag. This negative result applies to the linear adapter at this scale and budget; the paper uses Transformer heads.
+
+Stop condition, if the mean next-token improvement is not bigger than the frozen spread, we record it as unresolved or negative and leave the head off by default. A draft head also needs a measured agreement rate before we even think about serving work.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://arxiv.org/abs/2404.19737">Gloeckle et al.</a> define independent future heads and report the scale trend. <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html">PyTorch cross entropy</a> documents the PAD exclusion with <code>ignore_index</code>. The adapter choice, the matched-control rule and the current status are in <code>notes/day3.md</code> and <code>notes/day5.md</code>.</p>
+</Callout>

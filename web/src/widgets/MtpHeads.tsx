@@ -3,10 +3,10 @@ import { Slider, Stat, int } from "./ui.tsx";
 
 const TOKENS = ["def", " total", "(", "values", "):", "\n    ", "return", " sum", "(", "values", ")"];
 
-export default function MtpHeads({ width = 256 }: { width?: number }) {
+export default function MtpHeads({ width = 256, tokens = TOKENS }: { width?: number; tokens?: string[] }) {
   const [depth, setDepth] = useState(2);
   const [position, setPosition] = useState(2);
-  const inputs = TOKENS.slice(0, -1);
+  const inputs = tokens.slice(0, -1);
   return (
     <div class="widget">
       <div class="grid-controls widget-controls">
@@ -24,7 +24,7 @@ export default function MtpHeads({ width = 256 }: { width?: number }) {
               <tr>
                 <td>t+{k + 1}</td>
                 {inputs.map((_, i) => {
-                  const target = TOKENS[i + k + 1];
+                  const target = tokens[i + k + 1];
                   return <td>{target === undefined ? <span class="muted">–</span> : <span class={i === position ? "token new" : "token"}>{JSON.stringify(target).slice(1, -1)}</span>}</td>;
                 })}
               </tr>
@@ -33,7 +33,7 @@ export default function MtpHeads({ width = 256 }: { width?: number }) {
         </table>
       </div>
       <div class="readout-grid">
-        <Stat label="Targets at this position" value={depth} note={`tokens ${position + 1} to ${position + depth}`} />
+        <Stat label="Targets available here" value={Math.min(depth, tokens.length - position - 1)} note="later targets can fall past the block" />
         <Stat label="Positions lost at the end" value={depth - 1} note="depth k has no target for the last k − 1" />
         <Stat label="Extra parameters" value={int((depth - 1) * width * width)} note={`${depth - 1} adapter${depth === 2 ? "" : "s"} of ${width} × ${width}`} />
       </div>

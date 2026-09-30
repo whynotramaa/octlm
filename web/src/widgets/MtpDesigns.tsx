@@ -7,7 +7,7 @@ const LABEL: Record<Mode, string> = { parallel: "Transformer layer", sequential:
 const NOTE: Record<Mode, string> = {
   parallel: "Gloeckle et al.: each depth has its own Transformer layer on the shared trunk output, then a shared unembedding. All heads run at once.",
   sequential: "DeepSeek-V3: depth k takes depth k−1's output and the embedding of the token k steps ahead, so each prediction is conditioned on the one before. The chain runs in order.",
-  octlm: "octlm: Gloeckle's parallel form with a single linear adapter per depth instead of a Transformer layer. At 3.3M parameters a full block per depth would compare capacity, not the objective.",
+  octlm: "octlm uses parallel future heads with one linear adapter per extra depth. Day 3 chose this cheaper map at 3.3M parameters so a full extra block would not turn the comparison into a capacity test. Day 5 reuses the map at width 512.",
   tied: "The first Day 3 proposal: every head is the tied unembedding on the same hᵗ. The inputs are identical, so the logits are identical, and depth 2 predicts token t+1 again. Each depth needs its own transformation.",
 };
 

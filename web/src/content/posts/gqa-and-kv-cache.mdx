@@ -1,6 +1,6 @@
 ---
 title: Grouped-query attention and the KV cache
-description: "Generation stores every past key and value, and that cache grows with the number of key and value heads. Grouped-query attention shares them across query heads. Day 2 measured the saving exactly and the quality cost not at all, because the cost was below the noise."
+description: "Generation stores every past key and value, and that cache grows with the number of key and value heads. Grouped-query attention shares them across query heads. Day 2 measured the saving exactly, and the quality cost not at all, because it was below the noise."
 day: 2
 order: 5
 exps: ["EXP-012", "EXP-013"]
@@ -22,13 +22,13 @@ export const row = (name) => grid.find((r) => r.variant === name);
 export const exercise = noteTable(2, "KV cache bytes for MHA against GQA");
 export const series = [8, 4, 2, 1].map((kv, i) => ({ name: `${kv} KV head${kv > 1 ? "s" : ""}`, points: cache.filter((r) => r.kv_heads === kv).map((r) => [r.length, r.bytes]), slot: i + 1 }));
 
-Training processes a whole sequence at once. Generation does not. It produces one token, appends it, and runs again. Without care, every step recomputes the keys and values of every earlier token, although they never change. The fix is to keep them, and what they cost to keep is the subject of this post.
+Training processes a whole sequence at once. Generation doesn't. It produces one token, appends it, and runs again. And if you're not careful, every step recomputes the keys and values of every earlier token, even though they never change. The fix is to just keep them, and what it costs to keep them is what this post is about.
 
 <Label>The KV cache</Label>
 
-## Keys and values do not change, so keep them
+## Keys and values don't change, so keep them
 
-In causal attention, the key and value of position $j$ depend only on tokens up to $j$. When token $t + 1$ arrives, positions 1 to $t$ have exactly the same keys and values as before. A decoder can store them in a cache and compute only the new token's query, key and value at each step. The new query attends to the cached keys, and the new key and value are appended.
+In causal attention, the key and value of position $j$ only depend on tokens up to $j$. When token $t + 1$ comes in, positions 1 to $t$ have exactly the same keys and values as before. So a decoder can store them in a cache and only compute the new token's query, key and value each step. The new query attends to the cached keys, and the new key and value get appended.
 
 The cache costs memory for every layer, every key and value head, every head dimension and every cached position:
 
@@ -36,11 +36,11 @@ $$
 \text{bytes} = 2 \times L \times H_{kv} \times d_{\text{head}} \times T \times \text{bytes per number}
 $$
 
-The leading 2 is one key and one value. For a real model at a long context this is large, and generation reads all of it for every new token. Decoding one token does little arithmetic and a lot of reading, so its speed is set by memory bandwidth. A smaller cache is both less memory and faster decoding.
+The leading 2 is one key and one value. For a real model at a long context this gets big, and generation reads all of it for every new token. Decoding one token does very little arithmetic and a lot of reading, so its speed is set by memory bandwidth. A smaller cache means less memory and also faster decoding.
 
-The only term a design choice can change without losing information is $H_{kv}$.
+And the only term a design choice can change without losing information is $H_{kv}$.
 
-<Figure label="Playground" caption="Generating tokens one at a time. Step forward and switch the cache off to see what gets recomputed.">
+<Figure label="Playground" caption="Generating tokens one at a time. Step forward and turn the cache off to see what gets recomputed.">
   <KvDecode client:visible />
 </Figure>
 
@@ -48,17 +48,17 @@ The only term a design choice can change without losing information is $H_{kv}$.
 
 ## Let query heads share key and value heads
 
-Standard multi-head attention (MHA) has one key head and one value head per query head. Multi-query attention (MQA) keeps all the query heads and shares a single key and value head across them. Grouped-query attention (GQA) sits in between: the query heads split into groups, and each group shares one key and value head.
+Standard multi-head attention (MHA) has one key head and one value head per query head. Multi-query attention (MQA) keeps all the query heads and shares one single key and value head across all of them. Grouped-query attention (GQA) is in between, the query heads split into groups and each group shares one key and value head.
 
 <Figure label="Playground" caption="Eight query heads and their key-value heads. Pick a shape and a length to see the cache for one sequence, computed by the same kv_cache_bytes octlm uses. A test checks the function against Python for six configurations.">
   <GqaCache client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- The cache shrinks by exactly the ratio of query heads to KV heads. Nothing else in the formula moves, so the saving is predictable before any training.
-- The paper-exercise shape, 12 layers at width 512 and 4K positions in bfloat16, needs 96 MiB with MHA and 24 MiB with two KV heads. That is the Day 2 exercise, done by hand in the note.
-- Each query head still has its own query projection. Heads in a group can look for different things, but they search the same keys.
+- The cache shrinks by exactly the ratio of query heads to KV heads. Nothing else in the formula moves, so you know the saving before any training.
+- The paper-exercise shape, 12 layers at width 512 and 4K positions in bfloat16, needs 96 MiB with MHA and 24 MiB with two KV heads. That's the Day 2 exercise, done by hand in the note.
+- Each query head still has its own query projection. Heads in a group can look for different things, they just search the same keys.
 
 <div class="table-scroll">
 <table>
@@ -71,9 +71,9 @@ Standard multi-head attention (MHA) has one key head and one value head per quer
 
 ## Why MQA is fastest and still loses quality
 
-The GQA paper measured this on T5-XXL. Inference time fell from 1.51 s with MHA to 0.24 s with MQA, because decoding reads a cache one eighth or less of the size. Quality fell too, from 47.2 to 46.6 average ROUGE. With one key and value head, every query head retrieves from the same subspace, and heads can no longer specialize in what they look up. GQA with 8 groups took 0.28 s and scored 47.1, keeping most of the speed and almost none of the loss. The paper picked 8 groups because the slowdown from MQA stays small at first and grows as the group count approaches MHA.
+The GQA paper measured this on T5-XXL. Inference time went from 1.51 s with MHA to 0.24 s with MQA, because decoding reads a cache one eighth the size or less. But quality dropped too, from 47.2 to 46.6 average ROUGE. With one key and value head, every query head retrieves from the same subspace, so heads can't specialize in what they look up anymore. GQA with 8 groups took 0.28 s and scored 47.1, so most of the speed and almost none of the loss. The paper picked 8 groups because the slowdown from MQA stays small at first and grows as the group count gets close to MHA.
 
-The note flags one thing not to copy. Eight groups was a choice for a 64-head model. octlm has 8 query heads, where 8 KV heads is plain MHA. The ratio and the shape of the curve transfer, the number does not. So EXP-013 swept 1, 2, 4 and 8.
+The note flags one thing not to copy. Eight groups was a choice for a 64-head model. octlm has 8 query heads, where 8 KV heads is just plain MHA. The ratio and the shape of the curve transfer, the number doesn't. So EXP-013 swept 1, 2, 4 and 8.
 
 <Label>In octlm</Label>
 
@@ -93,7 +93,7 @@ At four layers, width 256, eight query heads and bfloat16, from `runs/day2-exp01
   <LineChart client:visible series={series} x={{ label: "cached positions", log: true }} y={{ label: "cache size", log: true, format: "mib" }} markers height={300} />
 </Figure>
 
-Every halving of the KV heads halves the cache at every length.
+Every time you halve the KV heads, the cache halves at every length.
 
 <Label>EXP-012 and EXP-013</Label>
 
@@ -103,19 +103,19 @@ Every halving of the KV heads halves the cache at every length.
   <GridChart client:visible rows={grid} highlight={["baseline", "gqa-4", "gqa-2", "mqa-1"]} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - All three grouped variants land inside the baseline's seed band on code. gqa-4 is {(row("baseline").code - row("gqa-4").code).toFixed(3)} better, gqa-2 {(row("gqa-2").code - row("baseline").code).toFixed(3)} worse, mqa-1 {(row("baseline").code - row("mqa-1").code).toFixed(3)} better. None of that is a signal.
-- They have fewer parameters, because the key and value projections shrink: {row("gqa-2").parameters.toLocaleString("en-US")} for gqa-2 against {row("baseline").parameters.toLocaleString("en-US")}.
+- They have fewer parameters, because the key and value projections shrink, {row("gqa-2").parameters.toLocaleString("en-US")} for gqa-2 against {row("baseline").parameters.toLocaleString("en-US")}.
 - All three are 20 to 24 percent slower per training step. Training never reads a cache, so it gets none of the benefit, and the broadcast inside the kernel costs time.
 
-Decision: keep two KV heads. It cuts the 4K cache from 16 MiB to 4 MiB, and its quality difference is inside the noise. One KV head would halve the cache again at the same measured quality. The note does not take it, because the GQA paper's quality penalty for MQA grows with model size, and a 400-step run at width 256 cannot see it. Two heads is the hedge. The Day 4 model has two.
+Decision, keep two KV heads. It cuts the 4K cache from 16 MiB to 4 MiB, and its quality difference is inside the noise. One KV head would halve the cache again at the same measured quality, but the note doesn't take it, because the GQA paper's quality penalty for MQA grows with model size, and a 400-step run at width 256 just can't see it. Two heads is the hedge. The Day 4 model has two.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **The cache itself.** Day 2 measured cache sizes from the formula. Generation still recomputes the whole sequence each step. The KV cache is EXP-071 on Day 5, and its exit check is that cached and uncached generation produce the same tokens.
+- **The cache itself, on Day 2.** Day 2 measured cache sizes from the formula and didn't actually cache tensors during generation. [Day 5 built and measured it](/posts/kv-cache-in-practice/), exact greedy parity, 256 KiB to 2 MiB of cache, and 10.6 to 15.8 percent faster generation in single T4 timings.
 - **Converting an MHA checkpoint to GQA.** The paper mean-pools the key and value projections in each group, then trains for 5 percent of the original steps. octlm trains GQA from scratch, so it never needed the conversion.
 
 <Callout hue="gray" title="Sources">

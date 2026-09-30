@@ -1,6 +1,6 @@
 ---
 title: Multi-head latent attention
-description: "MLA caches one small shared vector per token instead of per-head keys and values. Against multi-head attention that is a large saving. Against the two-KV-head model octlm already had, the arithmetic said it was small, and the note wrote that down before building it."
+description: "MLA caches one small shared vector per token instead of per-head keys and values. Against multi-head attention that's a big saving. Against the two-KV-head model octlm already had, the arithmetic said it was small, and the note wrote that down before building it."
 day: 3
 order: 4
 exps: ["EXP-019"]
@@ -14,21 +14,21 @@ import Callout from "../../components/Callout.astro";
 import MlaCache from "../../widgets/MlaCache.tsx";
 import MlaPaths from "../../widgets/MlaPaths.tsx";
 
-[Grouped-query attention](/posts/gqa-and-kv-cache/) shrinks the cache by sharing key and value heads. DeepSeek-V2's multi-head latent attention (MLA) goes further. It caches one low-rank vector per token, shared by every head, and rebuilds the keys and values from it when needed.
+[Grouped-query attention](/posts/gqa-and-kv-cache/) shrinks the cache by sharing key and value heads. DeepSeek-V2's multi-head latent attention (MLA) goes further. It caches one low-rank vector per token, shared by every head, and rebuilds the keys and values from it when it needs them.
 
 <Label>Definition</Label>
 
 ## Compress keys and values into one latent
 
-Each token's hidden vector $h_t$ is projected down to a latent $c_t$ of rank $r$, much smaller than the model width. Keys and values for every head are projected back up from it:
+Each token's hidden vector $h_t$ gets projected down to a latent $c_t$ of rank $r$, much smaller than the model width. Keys and values for every head are projected back up from it:
 
 $$
 c_t = W_{\text{down}}\, h_t, \qquad [k_t; v_t] = W_{\text{up}}\, c_t
 $$
 
-Only $c_t$ is cached. For a model with many heads, $r$ numbers per token replace $2 \cdot H \cdot d_{\text{head}}$.
+Only $c_t$ is cached. For a model with a lot of heads, $r$ numbers per token replace $2 \cdot H \cdot d_{\text{head}}$.
 
-RoPE does not survive this. A rotation that depends on position cannot pass through a fixed up-projection, so MLA adds a separate small key, $k^{\text{rope}}_t$ of width $d_r$, shared across heads and rotated normally. The cache holds $c_t$ and $k^{\text{rope}}_t$: $r + d_r$ numbers per token per layer.
+But RoPE doesn't survive this. A rotation that depends on position can't pass through a fixed up-projection, so MLA adds a separate small key, $k^{\text{rope}}_t$ of width $d_r$, shared across heads and rotated normally. The cache holds $c_t$ and $k^{\text{rope}}_t$, so $r + d_r$ numbers per token per layer.
 
 <Source file="octlm/model.py" symbol="CausalSelfAttention._project_mla" />
 
@@ -38,27 +38,27 @@ RoPE does not survive this. A rotation that depends on position cannot pass thro
 
 <Label>The arithmetic</Label>
 
-## A large win against MHA, a small one against GQA-2
+## A big win against MHA, a small one against GQA-2
 
-`PLAN.md` and `day-wise.md` both carried MLA in as a large cache saving, and DeepSeek reports reductions past 90 percent. The note checked where that figure comes from. It is measured against multi-head attention with many heads. Day 2 had already taken most of that saving with two KV heads.
+`PLAN.md` and `day-wise.md` both brought MLA in as a big cache saving, and DeepSeek reports reductions past 90 percent. The note checked where that figure comes from. It's measured against multi-head attention with a lot of heads. And Day 2 had already taken most of that saving with two KV heads.
 
 <Figure label="Playground" caption="Numbers cached per token per layer, computed with octlm's cacheDims. Slide the rank and change the width to see where MLA beats GQA-2 and by how much.">
   <MlaCache client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- At width 256 with 8 heads, GQA-2 caches $2 \times 2 \times 32 = 128$ numbers per token per layer. MLA at rank 64 with a 16-wide RoPE key caches 80. That is 1.6 times smaller, not 10.
+- At width 256 with 8 heads, GQA-2 caches $2 \times 2 \times 32 = 128$ numbers per token per layer. MLA at rank 64 with a 16-wide RoPE key caches 80. That's 1.6 times smaller, not 10.
 - MLA stops beating GQA-2 at rank 112 at this width.
-- At width 4,096, MHA caches 8,192 numbers per token per layer, and MLA's savings look like the paper's. MLA pays off in wide models with many heads. The lab is neither.
+- At width 4,096, MHA caches 8,192 numbers per token per layer, and MLA's savings look like the paper's. So MLA pays off in wide models with many heads, and this lab is neither.
 
-This was written into the note as a conflict with both plans, before any code ran.
+This went into the note as a conflict with both plans, before any code ran.
 
 <Label>The hypothesis</Label>
 
 ## MLA loses to GQA-2 at this width
 
-The useful number is the rank at which MLA's cache first falls below GQA-2's 128 numbers, and whether quality survives at that rank. Stop condition: ranks 32, 64 and 128 against the GQA-2 control, three seeds, reporting cache numbers per token, code and prose bits per byte, and seconds per step. The note marked the result experimental either way.
+The useful number is the rank where MLA's cache first falls below GQA-2's 128 numbers, and whether quality survives at that rank. Stop condition, ranks 32, 64 and 128 against the GQA-2 control, three seeds, reporting cache numbers per token, code and prose bits per byte, and seconds per step. The note marked the result experimental either way.
 
 <Label>Status</Label>
 
@@ -68,10 +68,10 @@ The plan changed before the run. The code stays behind a flag that defaults to o
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Absorbing the up-projection.** At decode time MLA folds $W_{\text{up}}$ into the query and output matrices, so it never materializes full keys. That is an identity with no training effect, it belongs to serving work, and it is the part most likely to hide a silent bug.
-- **Low-rank queries.** DeepSeek-V2 also compresses queries to save activation memory in training. It does not change the cache.
+- **Absorbing the up-projection.** At decode time MLA folds $W_{\text{up}}$ into the query and output matrices, so it never builds full keys. That's an identity with no training effect, it belongs to serving work, and it's the part most likely to hide a silent bug.
+- **Low-rank queries.** DeepSeek-V2 also compresses queries to save activation memory in training. It doesn't change the cache.
 
 <Callout hue="gray" title="Sources">
   <p>DeepSeek-AI, <a href="https://arxiv.org/abs/2405.04434">DeepSeek-V2</a>, for the latent, the decoupled RoPE key and the reported cache reduction. The conflict with the plans and the 1.6× arithmetic come from <code>notes/day3.md</code>.</p>

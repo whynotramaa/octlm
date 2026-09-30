@@ -26,8 +26,13 @@ Day 4 is complete: EXP-065 through EXP-068. A 26M-parameter `modern` model train
 TinyStories tokens in float16 on a Kaggle T4 in 4.1 hours. It reaches validation loss 0.7561 and
 0.4839 bits per byte, and writes coherent short stories with temperature 0.8 and top-k 40.
 
-Read `notes/day1.md` through `notes/day4.md` for the research sources, the
-measurements, and every keep-or-revert decision.
+Day 5 is complete. EXP-069 trained three seeds of each stack for 98.3M tokens on a Kaggle T4:
+`modern` averages 0.5539 bits per byte against 0.5877 for the baseline, a gap 6.8 times the 0.0050
+seed spread, but it takes 2.2 times as long per step. EXP-071 and EXP-072 have measured KV-cache and
+int8 results. EXP-070 multi-token prediction loses by 0.0188 bits per byte against the 0.0050 threshold and stays off by default.
+
+Read `notes/day1.md` through `notes/day5.md` for the sources, measurements, decisions, and open
+checks.
 
 ## Requirements
 

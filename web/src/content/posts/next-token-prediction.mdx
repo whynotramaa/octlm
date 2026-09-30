@@ -1,6 +1,6 @@
 ---
 title: What a language model predicts
-description: "A language model assigns a probability to every possible next token. Cross entropy, perplexity and bits per byte are three ways of reading how much probability it gave the right one."
+description: "A language model gives a probability to every possible next token. Cross entropy, perplexity and bits per byte are three ways of reading how much probability it gave the right one."
 day: 0
 order: 2
 exps: []
@@ -14,62 +14,62 @@ import LossMeter from "../../widgets/LossMeter.tsx";
 import ShiftedTargets from "../../widgets/ShiftedTargets.tsx";
 import ProbabilityCurve from "../../widgets/ProbabilityCurve.tsx";
 
-Everything octlm builds serves one task. Given the tokens so far, output a probability for every token in the vocabulary as a guess for the next one. Generation, training and every metric on this site follow from that.
+Everything octlm builds is for one task. Given the tokens so far, output a probability for every token in the vocabulary as a guess for the next one. That's it. Generation, training and every metric on this site come out of that one thing.
 
 <Label>Definition</Label>
 
 ## A probability for every possible next token
 
-Text is first split into tokens, small pieces with integer IDs. The Day 1 tokenizer has 1,024 of them, the Day 4 one has 8,192. [Characters vs bytes](/posts/character-tokenizer/) covers how the split works. For now a token is a number between 0 and V − 1.
+Text first gets split into tokens, small pieces with integer IDs. The Day 1 tokenizer has 1,024 of them, the Day 4 one has 8,192. [Characters vs bytes](/posts/character-tokenizer/) covers how the split works, for now just think of a token as a number between 0 and V − 1.
 
-The model reads tokens $x_1, \dots, x_t$ and produces one score per vocabulary entry, a vector of $V$ numbers called logits. Softmax turns the scores into probabilities:
+The model reads tokens $x_1, \dots, x_t$ and produces one score per vocabulary entry, so a vector of $V$ numbers called logits. Softmax turns those scores into probabilities:
 
 $$
 p(x_{t+1} = v \mid x_{\le t}) = \frac{e^{z_v}}{\sum_{u=1}^{V} e^{z_u}}
 $$
 
-The exponent makes every probability positive, and the division makes them sum to 1. A higher score means a higher probability, and only the differences between scores matter. Adding 5 to every score changes nothing.
+The exponent makes every probability positive and the division makes them sum to 1. Higher score means higher probability, and only the differences between scores matter, if you add 5 to every score nothing changes.
 
-That is the whole interface. The model does not output a word. It outputs a distribution, and something outside the model picks from it. It takes the most likely token for greedy decoding, or a random draw for sampling, which [the sampling post](/posts/sampling/) covers.
+And that's the whole interface. The model doesn't output a word. It outputs a distribution, and something outside the model picks from it, either the most likely token for greedy decoding, or a random draw for sampling, which [the sampling post](/posts/sampling/) covers.
 
 <Label>Playground</Label>
 
 ## Scoring one guess
 
-<Figure label="Playground" caption="Six candidate tokens with fixed scores except the correct one. The bars are the softmax. Every metric below reads only the probability of the correct token.">
+<Figure label="Playground" caption="Six candidate tokens with fixed scores, except the correct one. The bars are the softmax. Every metric below only reads the probability of the correct token.">
   <LossMeter client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- Raising the score for `" mat"` takes probability from every other word at once, because the six probabilities must sum to 1.
-- Cross entropy is 0 only when p is 1, and it grows without bound as p approaches 0. A confident wrong guess costs far more than an unsure one.
-- Perplexity is $1/p$ for one prediction. At p = 0.25 it is 4, so the model is as unsure as a fair four-way choice.
+- Raising the score for `" mat"` takes probability away from every other word at once, because the six probabilities have to sum to 1.
+- Cross entropy is 0 only when p is 1, and it grows without limit as p goes to 0. So a confident wrong guess costs way more than an unsure one.
+- Perplexity is $1/p$ for one prediction. At p = 0.25 it's 4, meaning the model is as unsure as a fair four-way choice.
 - Bits per byte divides the bits by how many bytes of text the token covered. Move the bytes slider and only that number changes.
 
 <Label>The loss</Label>
 
 ## Cross entropy, averaged over every position
 
-Training adjusts the model's weights to raise the probability of the token that actually came next. The loss for one position is the negative log of that probability:
+Training nudges the model's weights to raise the probability of the token that actually came next. The loss for one position is the negative log of that probability:
 
 $$
 \ell_t = -\ln p(x_{t+1} \mid x_{\le t})
 $$
 
-Over a whole text of $N$ predictions, the loss is the average:
+Over a whole text of $N$ predictions, the loss is just the average:
 
 $$
 \mathcal{L} = \frac{1}{N} \sum_{t=1}^{N} -\ln p(x_{t+1} \mid x_{\le t})
 $$
 
-Why a logarithm? The probability of the whole text is the product of the per-token probabilities, and the log turns that product into a sum. Minimizing the average negative log probability is the same as maximizing the probability of the training text. It also has a meaning from information theory. $-\log_2 p$ is the number of bits an ideal compressor using the model would spend on that token. A language model is a compressor, and its loss is its compressed size.
+Why a log though ? The probability of the whole text is the product of the per-token probabilities, and the log turns that product into a sum. So minimizing the average negative log probability is the same thing as maximizing the probability of the training text. And there's an information theory reading too, $-\log_2 p$ is the number of bits an ideal compressor using this model would spend on that token. So a language model is basically a compressor, and its loss is its compressed size.
 
-The natural log gives the loss in nats. Dividing by $\ln 2$ converts to bits. PyTorch's `cross_entropy` uses nats, and so does every `loss` field in `runs/`.
+Natural log gives the loss in nats, divide by $\ln 2$ and you get bits. PyTorch's `cross_entropy` uses nats, and so does every `loss` field in `runs/`.
 
-A useful reference point is the loss of a model that knows nothing and spreads probability evenly, which is $\ln V$. For the Day 1 vocabulary that is $\ln 1024 \approx 6.93$ nats. A fresh model should start near there. [The baseline block](/posts/baseline-block/) shows what happened when ours did not.
+A useful reference point is the loss of a model that knows nothing and spreads probability evenly, which is $\ln V$. For the Day 1 vocabulary that's $\ln 1024 \approx 6.93$ nats, so a fresh model should start somewhere near there. [The baseline block](/posts/baseline-block/) shows what happened when ours didn't.
 
-<Figure label="Playground" caption="The penalty the loss assigns to one prediction, as a function of the probability the model gave the correct token. Natural log in blue, base 2 in orange.">
+<Figure label="Playground" caption="The penalty the loss gives one prediction, as a function of the probability the model gave the correct token. Natural log in blue, base 2 in orange.">
   <ProbabilityCurve client:visible />
 </Figure>
 
@@ -77,23 +77,23 @@ A useful reference point is the loss of a model that knows nothing and spreads p
 
 ## One sequence is many training examples
 
-A decoder predicts at every position in parallel. Feed it $T$ tokens and it returns $T$ distributions. The target for position $t$ is the token at $t + 1$, so the targets are the inputs shifted left by one.
+A decoder predicts at every position in parallel. Feed it $T$ tokens and it gives back $T$ distributions. The target for position $t$ is the token at $t + 1$, so the targets are just the inputs shifted left by one.
 
-<Figure label="Playground" caption="Each row is one prediction the model makes during a single forward pass. octlm adds <|bos|> at the start of a document and <|eos|> at the end, so the model also learns how documents begin and end.">
+<Figure label="Playground" caption="Each row is one prediction the model makes during a single forward pass. octlm adds <|bos|> at the start of a document and <|eos|> at the end, so the model also learns how documents start and end.">
   <ShiftedTargets client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- A sentence of a dozen tokens gives a dozen predictions, all computed at once. This is why training a decoder is efficient. One pass gives one loss per position.
-- Position $t$ must not see token $t + 1$, which sits in the same input. [Causal attention](/posts/causal-attention/) enforces that with a mask.
+- A sentence of a dozen tokens gives a dozen predictions, all computed at once. That's why training a decoder is efficient, one pass gives one loss per position.
+- Position $t$ must not see token $t + 1$, which is sitting in the same input. [Causal attention](/posts/causal-attention/) enforces that with a mask.
 - The last input token has a target, `<|eos|>`. Nothing predicts `<|bos|>`, because nothing comes before it.
 
 <Label>Perplexity</Label>
 
 ## Perplexity is the loss in a friendlier unit
 
-Perplexity is $e^{\mathcal{L}}$, the exponent of the average loss. It is the geometric mean of $1/p$ across positions:
+Perplexity is $e^{\mathcal{L}}$, the exponent of the average loss, which works out to the geometric mean of $1/p$ across positions:
 
 $$
 \operatorname{PPL} = e^{\mathcal{L}} = \left(\prod_{t=1}^{N} \frac{1}{p(x_{t+1} \mid x_{\le t})}\right)^{1/N}
@@ -101,19 +101,19 @@ $$
 
 A perplexity of 30 means the model is, on average, as unsure as a fair choice among 30 tokens. A uniform model has perplexity $V$.
 
-Perplexity has a trap. It depends on what a token is. A tokenizer whose tokens cover more text makes each prediction harder, because each token carries more information, and so its perplexity is higher even when the model is better. The Day 1 results hit this directly: the BPE model's perplexity was 8 times the character model's, and it was the better model. [Measuring a tokenizer](/posts/measuring-tokenizers/) works through the numbers.
+But perplexity has a trap, it depends on what a token is. If a tokenizer's tokens cover more text, each prediction is harder because each token carries more information, so its perplexity goes up even when the model is better. The Day 1 results hit exactly this, the BPE model's perplexity was 8 times the character model's, and it was the better model. [Measuring a tokenizer](/posts/measuring-tokenizers/) works through the numbers.
 
 <Label>Bits per byte</Label>
 
 ## A unit every tokenizer shares
 
-Every tokenizer in octlm turns text into tokens and back without loss, so the underlying text is the same whatever the split. Bits per byte measures the model against that text:
+Every tokenizer in octlm turns text into tokens and back without losing anything, so the underlying text is the same no matter how it's split. Bits per byte measures the model against that text:
 
 $$
 \operatorname{bpb} = \frac{\sum_t -\ln p(x_{t+1} \mid x_{\le t})}{\ln 2 \cdot \text{UTF-8 bytes of the targets}}
 $$
 
-The numerator is the total information in nats over all predictions. The denominator is the number of bytes those predictions covered, times $\ln 2$ to turn nats into bits. The result is how many bits the model needs per byte of text. Plain UTF-8 English costs 8 bits per byte. A good compressor like `gzip` reaches about 2 to 3. A trained language model goes lower.
+The top is the total information in nats over all predictions. The bottom is the number of bytes those predictions covered, times $\ln 2$ to turn nats into bits. So the result is how many bits the model needs per byte of text. Plain UTF-8 English costs 8 bits per byte, a good compressor like `gzip` gets to about 2 to 3, and a trained language model goes lower than that.
 
 Special tokens like `<|eos|>` count toward the loss but cover 0 bytes. PAD targets count toward neither.
 
@@ -121,14 +121,14 @@ octlm computes all three numbers in one pass over the validation blocks:
 
 <Source file="octlm/train.py" symbol="evaluate" />
 
-`nll_sum` adds up the loss over real targets. `byte_count` adds up how many bytes those targets decode to, from a per-token table the tokenizer provides. Perplexity comes from the average, bits per byte from the total.
+`nll_sum` adds up the loss over real targets. `byte_count` adds up how many bytes those targets decode to, using a per-token table from the tokenizer. Perplexity comes from the average, bits per byte from the total.
 
 <Label>Skipped</Label>
 
-## What we did not measure, and why
+## What we didn't measure, and why
 
-- **Accuracy.** The share of positions where the top token is right ignores how much probability the model gave the right answer when it was wrong. Loss uses all of it.
-- **Downstream benchmarks.** A model this small scores at chance on standard benchmarks. Bits per byte on held-out text is the number that moves. The harness eval on Day 7 is the task measure.
+- **Accuracy.** The share of positions where the top token is right ignores how much probability the model gave the right answer when it was wrong. Loss uses all of that.
+- **Downstream benchmarks.** A model this small scores at chance on standard benchmarks. Bits per byte on held-out text is the number that actually moves. The harness eval on Day 7 is the task measure.
 
 <Callout hue="gray" title="Sources">
   <p>Shannon's source coding theorem gives the bits reading of −log₂ p. The decision to compare tokenizers by bits per byte, and the bits-per-byte code, come from <code>notes/day1.md</code>. The special-token handling comes from <code>octlm/train.py</code> and <code>octlm/tokenizer.py</code>.</p>

@@ -14,27 +14,27 @@ import Callout from "../../components/Callout.astro";
 import MtpHeads from "../../widgets/MtpHeads.tsx";
 import MtpDesigns from "../../widgets/MtpDesigns.tsx";
 
-Next-token prediction gives the model one target per position. Multi-token prediction (MTP) gives it several targets, the next token, the one after, and so on, each from its own head on the same trunk. The extra targets are extra training signal, and at inference time an extra head can draft tokens ahead for speculative decoding. Day 3 built it, wrote down a negative hypothesis, and stopped before the run.
+Next-token prediction gives the model one target per position. Multi-token prediction (MTP) gives it several, the next token, the one after that, and so on, each from its own head on the same trunk. The extra targets are extra training signal, and at inference time an extra head can draft tokens ahead for speculative decoding. Day 3 built it, wrote down a negative hypothesis, and stopped before the run.
 
 <Label>Definition</Label>
 
 ## One trunk, several future targets
 
-The trunk is the usual stack of blocks. It produces one final hidden vector $h_t$ per position. Head $k$ maps $h_t$ to a distribution over the token $k$ steps ahead, $x_{t+k}$. The training loss averages the heads:
+The trunk is the usual stack of blocks, and it produces one final hidden vector $h_t$ per position. Head $k$ maps $h_t$ to a distribution over the token $k$ steps ahead, $x_{t+k}$. The training loss averages the heads:
 
 $$
 \mathcal{L}_{\text{MTP}} = \frac{1}{n}\sum_{k=1}^{n} \mathcal{L}_k, \qquad \mathcal{L}_k = -\frac{1}{T - k + 1}\sum_{t} \ln p_k(x_{t+k} \mid x_{\le t})
 $$
 
-Depth $n = 1$ is ordinary next-token training. Each extra depth loses $k - 1$ positions at the end of the block, because their targets fall past the last token.
+Depth $n = 1$ is just ordinary next-token training. Each extra depth loses $k - 1$ positions at the end of the block, because their targets fall past the last token.
 
 <Figure label="Playground" caption="A short line of code as tokens. Each row below the input is one head's target at every position. The width setting is the Day 3 model's 256.">
   <MtpHeads client:visible width={256} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- At depth 2, position 2 must predict both the next token and the one after it. The second target requires planning past the immediate next token.
+- At depth 2, position 2 has to predict both the next token and the one after it. The second target needs planning past the immediate next token.
 - The table's right edge loses one cell per extra depth. Those positions have no target that far ahead.
 - Each extra depth adds one 256 × 256 adapter, 65,536 parameters, about 2 percent of the model.
 
@@ -45,9 +45,9 @@ Depth $n = 1$ is ordinary next-token training. Each extra depth loses $k - 1$ po
 The two papers Day 3 read build MTP differently:
 
 - **Gloeckle et al. (2024)** put $n$ independent heads on one shared trunk, each a Transformer layer feeding a shared unembedding. The heads run in parallel.
-- **DeepSeek-V3** uses $D$ sequential modules. Each is a full Transformer block plus a projection that mixes the trunk's hidden state with the embedding of the next true token, so every depth keeps a complete causal chain. It reports that the first extra depth's prediction is accepted over 80 percent of the time in speculative decoding, worth about 1.8 times faster decoding.
+- **DeepSeek-V3** uses $D$ sequential modules. Each one is a full Transformer block plus a projection that mixes the trunk's hidden state with the embedding of the next true token, so every depth keeps a complete causal chain. It reports that the first extra depth's prediction gets accepted over 80 percent of the time in speculative decoding, which is worth about 1.8 times faster decoding.
 
-The note chose Gloeckle's parallel form. A full Transformer block per depth would add almost a model's worth of parameters at 3.3 million, and the comparison would measure capacity instead of the objective. It then made one more deviation and recorded it: each depth gets one linear adapter instead of a Transformer layer, the cheapest thing that keeps the heads distinct.
+The note picked Gloeckle's parallel form. A full Transformer block per depth would add almost a whole model's worth of parameters at 3.3 million, and then the comparison would measure capacity instead of the objective. It then made one more deviation and wrote it down, each depth gets one linear adapter instead of a Transformer layer, the cheapest thing that keeps the heads distinct.
 
 <Figure label="Diagram" caption="Three future tokens from one trunk, four ways. The last one is the design the note rejected.">
   <MtpDesigns client:visible />
@@ -55,9 +55,9 @@ The note chose Gloeckle's parallel form. A full Transformer block per depth woul
 
 <Label>A correction</Label>
 
-## Why the heads cannot all be tied
+## Why the heads can't all be tied
 
-The Day 3 plan first proposed tying every head to the embedding matrix, as the main head is, so MTP would add no parameters. The note caught the error before any code. Heads that share the unembedding and read the same hidden state compute identical logits. Depth 2 would predict token $t + 1$ again, not $t + 2$. Each depth needs its own transformation before the shared unembedding, and octlm's model says so where it builds them:
+The Day 3 plan first proposed tying every head to the embedding matrix, like the main head, so MTP would add no parameters. The note caught the mistake before any code got written. Heads that share the unembedding and read the same hidden state compute identical logits. So depth 2 would predict token $t + 1$ again, not $t + 2$. Each depth needs its own transformation before the shared unembedding, and octlm's model says so where it builds them:
 
 <Source file="octlm/model.py" symbol="Decoder.__init__" />
 
@@ -65,31 +65,31 @@ The loss shifts the targets by $k$ for depth $k$ and drops the positions that fa
 
 <Source file="octlm/train.py" symbol="mtp_loss" />
 
-With `mtp_depth = 1` this is exactly the ordinary cross entropy, and a test checks that the logits match the pre-Day-3 model. That identity is the guarantee that adding the feature changed nothing for every model that does not use it.
+With `mtp_depth = 1` this is exactly the ordinary cross entropy, and a test checks that the logits match the pre-Day-3 model. That identity is the guarantee that adding the feature changed nothing for every model that doesn't use it.
 
 <Label>The hypothesis</Label>
 
 ## Written negative, before the run
 
-Gloeckle et al. report a scale coupling. MTP's gains grow with model size, and small models see muted or harmful effects on some benchmarks. At 7B on 200B tokens, their 2-future model matched the baseline and the 4-future model regressed. The gains that hold are on code and at 3B parameters and above.
+Gloeckle et al. report a scale coupling. MTP's gains grow with model size, and small models see muted or even harmful effects on some benchmarks. At 7B on 200B tokens, their 2-future model matched the baseline and the 4-future model regressed. The gains that hold are on code and at 3B parameters and above.
 
-So the note wrote the hypothesis in the negative. **MTP does not improve bits per byte at 3.3M parameters.** What the run would actually measure is the cost, and the depth-2 agreement rate, which is how often the depth-2 head's top guess is the true token two steps ahead, measured by `mtp_agreement` in `octlm/day3.py`. That rate is the number that says whether a free draft head for speculative decoding is worth building.
+So the note wrote a negative hypothesis, **MTP would not improve bits per byte at 3.3M parameters.** The Day 3 run never tested it. The planned run would also have measured cost and depth-2 agreement, the share of held-out positions where the depth-2 head's top guess is the true token two steps ahead. `mtp_agreement` in `octlm/day3.py` computes that rate. It's one input to deciding whether a draft head deserves a speculative-decoding experiment.
 
-Stop condition: depths 1, 2 and 3, three seeds each. Keep only if depth 2 beats the noise floor on code, or if its agreement rate justifies a draft head. Otherwise revert and record the scale finding as the reason.
+Stop condition, depths 1, 2 and 3, three seeds each. Keep only if depth 2 beats the noise floor on code, or if its agreement rate justifies a draft head. Otherwise revert and record the scale finding as the reason.
 
 <Label>Status</Label>
 
-## Not run. Moved to Day 5 as EXP-070
+## Day 3 run withdrawn, Day 5 comparison built
 
-The plan changed on 2026-09-23, before Stage 0. The code stayed. [Why the plan changed](/posts/why-the-plan-changed/) explains the decision. EXP-070 runs depth 2 against the same control on the 20M model, after EXP-069 measures the seed spread at that scale, and the hypothesis stays negative.
+The plan changed on 2026-09-23, before Stage 0. The code stayed. [Why the plan changed](/posts/why-the-plan-changed/) explains the decision. [EXP-070](/posts/mtp-at-the-day4-scale/) now has a working local command for depth 2 on the 26M model and will compare it with the matched modern control against EXP-069's measured 0.0050 seed spread. Its GPU comparison and draft-agreement result are still pending.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **DeepSeek's sequential modules.** Explained above: they would turn an objective comparison into a capacity comparison.
-- **Speculative decoding.** A draft head is only useful if the agreement rate is high, and nothing measured it. Speculative decoding was dropped from the plan with the rest of the serving work.
-- **The small-scale MTP paper.** The note listed "Babies Learn to Look Ahead" to read before the run. It was not read, and the note says so.
+- **DeepSeek's sequential modules.** Explained above, they'd turn an objective comparison into a capacity comparison.
+- **Speculative decoding.** A draft head is only useful if the agreement rate is high, and nothing measured it. Speculative decoding got dropped from the plan with the rest of the serving work.
+- **The small-scale MTP paper.** The note listed "Babies Learn to Look Ahead" to read before the run. It wasn't read, and the note says that.
 
 <Callout hue="gray" title="Sources">
   <p>Gloeckle et al., <a href="https://arxiv.org/abs/2404.19737">Better and Faster Large Language Models via Multi-token Prediction</a>, for parallel heads and the scale coupling. DeepSeek-AI, <a href="https://arxiv.org/abs/2412.19437">DeepSeek-V3</a>, for sequential modules and the acceptance rate. The design choices, the tying correction and the hypothesis come from <code>notes/day3.md</code>.</p>

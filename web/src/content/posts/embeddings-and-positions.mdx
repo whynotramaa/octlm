@@ -1,6 +1,6 @@
 ---
 title: Embeddings and positions
-description: "A token ID becomes a vector by looking up one row of a learned table. Attention cannot see order on its own, so a second table, or a formula, adds the position."
+description: "A token ID becomes a vector by looking up one row of a learned table. Attention can't see order on its own, so a second table, or a formula, adds the position."
 day: 1
 order: 4
 exps: ["EXP-005"]
@@ -14,11 +14,11 @@ import EmbeddingLookup from "../../widgets/EmbeddingLookup.tsx";
 import SinusoidalMap from "../../widgets/SinusoidalMap.tsx";
 import OneHotLookup from "../../widgets/OneHotLookup.tsx";
 
-The tokenizer turns text into integers. The first layer of the model turns each integer into a vector, and every later layer works on those vectors. This post covers that first layer and the second piece of information it has to add, which is where in the sequence each token sits.
+The tokenizer turns text into integers. The first layer of the model turns each integer into a vector, and every layer after that works on those vectors. This post is about that first layer, and the second piece of info it has to add, which is where in the sequence each token is sitting.
 
 <Label>Definition</Label>
 
-## An embedding is a row lookup
+## An embedding is just a row lookup
 
 An embedding table is a learned matrix $E$ with one row per vocabulary entry and $C$ columns, where $C$ is the model width. Token ID $i$ becomes row $E_i$:
 
@@ -28,21 +28,21 @@ $$
 
 For the Day 1 model, $V = 1{,}024$ and $C = 128$, so the table holds 131,072 numbers. A batch of token IDs shaped `[B, T]` becomes vectors shaped `[B, T, C]`.
 
-Mathematically the lookup is a one-hot vector times the matrix. In practice PyTorch's `nn.Embedding` indexes the row directly, which skips multiplying by 1,023 zeros. The gradient flows back only to the rows that were used, so a token that never appears in training keeps its initial random row.
+Mathematically the lookup is a one-hot vector times the matrix. In practice PyTorch's `nn.Embedding` just indexes the row directly, which skips multiplying by 1,023 zeros. The gradient only flows back to the rows that got used, so a token that never shows up in training keeps its initial random row.
 
-The rows start random. Training moves them so that tokens used in similar contexts end up with similar vectors, because the layers above them are the same function for every token.
+The rows start random. Training moves them so that tokens used in similar contexts end up with similar vectors, because the layers above are the same function for every token.
 
-<Figure label="Playground" caption="Pick a token. The one-hot vector times the embedding table equals the highlighted row. Values are random, as they are at initialization.">
+<Figure label="Playground" caption="Pick a token. The one-hot vector times the embedding table equals the highlighted row. Values are random, like at initialization.">
   <OneHotLookup client:visible />
 </Figure>
 
 <Label>The problem</Label>
 
-## Attention does not know the order
+## Attention doesn't know the order
 
-[Attention](/posts/causal-attention/) compares every position's query with every earlier position's key. Nothing in that comparison says which key is one step back and which is fifty. The causal mask supplies one fact, that a key is not in the future. Beyond that, if you shuffled the earlier tokens, each position would receive the same weighted average.
+[Attention](/posts/causal-attention/) compares every position's query with every earlier position's key. Nothing in that comparison says which key is one step back and which one is fifty back. The causal mask gives you one fact, that a key isn't in the future. Beyond that, if you shuffled the earlier tokens, each position would get the exact same weighted average.
 
-That is fatal for language. "The dog bit the man" and "The man bit the dog" would look the same to the last position. So the model needs position added to the vector before attention sees it.
+And for language that's fatal. "The dog bit the man" and "The man bit the dog" would look the same to the last position. So the model needs position added into the vector before attention sees it.
 
 <Label>Learned positions</Label>
 
@@ -56,20 +56,20 @@ $$
 
 This is what GPT-2 does and what octlm's Day 1 baseline does. The Day 1 table has 128 rows, one per position of its 128-token context.
 
-<Figure label="Playground" caption="Six token IDs, looked up in a small random token table, plus position rows. Pick tokens with the selects. Switch between learned rows (random here, as they are at initialization) and the fixed sinusoidal rows.">
+<Figure label="Playground" caption="Six token IDs, looked up in a small random token table, plus position rows. Pick tokens with the selects. Switch between learned rows (random here, like at initialization) and the fixed sinusoidal rows.">
   <EmbeddingLookup client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - The same word at two positions gets the same token row. Only the position row tells them apart in the sum.
-- The sum keeps both signals in one vector of the same width. Nothing is concatenated, so the model width does not grow.
-- Swapping to sinusoidal rows changes only the middle table. The token table is untouched.
+- The sum keeps both signals in one vector of the same width. Nothing gets concatenated, so the model width doesn't grow.
+- Switching to sinusoidal rows only changes the middle table, the token table isn't touched.
 
-A learned table has two limits:
+A learned table has two limits though:
 
-1. **It stops at its last row.** A model with a 128-row table has no vector for position 128. octlm raises an error rather than invent one. Day 2 recorded this as the reason the length experiment could not use learned positions as its control.
-2. **Each row learns only from the positions training reaches.** octlm packs training text into full-length blocks, so all 128 rows train. A model trained on shorter sequences would leave its later rows at their random starting values.
+1. **It stops at its last row.** A model with a 128-row table has no vector for position 128. octlm raises an error instead of inventing one. Day 2 wrote this down as the reason the length experiment couldn't use learned positions as its control.
+2. **Each row only learns from positions training actually reaches.** octlm packs training text into full-length blocks, so all 128 rows train. But a model trained on shorter sequences would leave its later rows at their random starting values.
 
 <Label>Sinusoidal positions</Label>
 
@@ -81,25 +81,25 @@ $$
 P_{t,\,2i} = \sin\!\left(\frac{t}{10000^{2i/C}}\right), \qquad P_{t,\,2i+1} = \cos\!\left(\frac{t}{10000^{2i/C}}\right)
 $$
 
-The first pair turns once every $2\pi$ positions. The last pair turns about 10,000 times slower. Each position gets a unique pattern, and any length can be computed.
+The first pair turns once every $2\pi$ positions, the last pair turns about 10,000 times slower. So each position gets a unique pattern, and you can compute it for any length.
 
 <Figure label="Playground" caption="The sinusoidal table from octlm's formula, and the cosine similarity between every pair of positions. Change the width and the number of positions.">
   <SinusoidalMap client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- In the table, left columns change every row and right columns barely change. Fast pairs separate neighbors. Slow pairs separate distant positions.
-- In the similarity map, the band along the diagonal has the same shape all the way down. The dot product of two sinusoidal position vectors is a sum of $\cos(\omega_i (t - s))$ terms, so it depends only on the distance $t - s$.
+- In the table, the left columns change every row and the right columns barely change. Fast pairs separate neighbors, slow pairs separate positions that are far apart.
+- In the similarity map, the band along the diagonal has the same shape all the way down. The dot product of two sinusoidal position vectors is a sum of $\cos(\omega_i (t - s))$ terms, so it only depends on the distance $t - s$.
 - Wider tables separate positions more sharply, because more frequencies take part.
 
-That second point is why sinusoids were chosen. A fixed offset is a fixed linear map, so a model could learn to attend "3 back" once and use it anywhere. In practice the signal is added to the token vector and then mixed by the projections, which blurs it. Day 2 replaced both approaches with [RoPE](/posts/rope/), which applies position inside attention itself.
+That second point is why sinusoids were picked in the first place. A fixed offset is a fixed linear map, so a model could learn "attend 3 back" once and use it anywhere. In practice though, the signal gets added to the token vector and then mixed by the projections, which blurs it. Day 2 replaced both approaches with [RoPE](/posts/rope/), which applies position inside attention itself.
 
 <Label>In octlm</Label>
 
 ## The code
 
-The embedding step handles all three position types. Learned and sinusoidal positions are added here. RoPE adds nothing here and acts later inside attention.
+The embedding step handles all three position types. Learned and sinusoidal positions get added here. RoPE adds nothing here and acts later inside attention.
 
 <Source file="octlm/model.py" symbol="Decoder._embed" />
 
@@ -113,17 +113,17 @@ A test on this site checks the TypeScript table on this page against this functi
 
 ## What we measured, and what we chose not to build
 
-Problem: we needed a way to inspect embeddings without a plotting dependency.
+Problem, we needed a way to look at embeddings without pulling in a plotting dependency.
 
-The benchmark prints the nearest token to token 0 and the nearest position to position 0 by cosine similarity. On the untrained benchmark model those neighbors are random, as they should be. The diagnostic only proves that the code path works. The Day 4 model is the first one trained long enough for its neighbors to mean something.
+The benchmark prints the nearest token to token 0 and the nearest position to position 0 by cosine similarity. On the untrained benchmark model those neighbors are random, which is what they should be. So the diagnostic only proves the code path works. The Day 4 model is the first one trained long enough for its neighbors to actually mean something.
 
-The Day 1 reading plan also covered pooling, which turns a sequence of vectors into one vector. Mean pooling averages `[B, T, C]` over $T$ into `[B, C]`, and learned pooling adds weights to decide the mix. Both are for classifiers, which need one answer per sequence. A language model needs a prediction at every position, so neither belongs in its forward pass. The note keeps both as written exercises, and octlm has no pooling code.
+The Day 1 reading plan also covered pooling, which turns a sequence of vectors into one vector. Mean pooling averages `[B, T, C]` over $T$ into `[B, C]`, and learned pooling adds weights to decide the mix. Both are for classifiers, which need one answer per sequence. A language model needs a prediction at every position, so neither one belongs in its forward pass. The note keeps both as written exercises, and octlm has no pooling code.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Pooling layers.** Explained above. Unused code is not written.
+- **Pooling layers.** Explained above, we don't write code nobody uses.
 - **Embedding plots.** An untrained model's embedding space has no structure worth plotting.
 - **Separate input and output tables.** octlm ties the output head to this same table. [The baseline block](/posts/baseline-block/) covers why.
 

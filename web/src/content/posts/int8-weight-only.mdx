@@ -1,0 +1,85 @@
+---
+title: What int8 weight-only quantization saves
+description: "Follow one float weight into an int8 code and back. The trained checkpoint got 41.7% smaller with almost the same bits per byte, but this PyTorch decode path ran 20.1% slower."
+day: 5
+order: 4
+exps: ["EXP-072"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import QuantRow from "../../widgets/QuantRow.tsx";
+import QuantCompare from "../../widgets/QuantCompare.tsx";
+import quantRuns from "../../data/runs/day5-quant.json";
+
+export const result = quantRuns[0];
+
+Take one weight, −0.35. Store it as a small integer plus a scale that says what one integer step means. When the model uses that layer, multiply the integer by the scale and you get an approximate float back. Now move the largest weight below and watch what happens to −0.35, one outlier makes the scale coarser for the whole row.
+
+<Figure label="Playground" caption="Follow −0.35 from float to signed int8 and back, and look at all five weights in the row. Move the outlier to make the integer grid coarser. The rule matches Int8Linear and a PyTorch fixture.">
+  <QuantRow client:visible />
+</Figure>
+
+The Day 4 model uses float16 on a T4, so every float16 projection weight takes two bytes in an inference checkpoint. Quantization asks, can we store one-byte integer weights instead and make the checkpoint smaller without hurting held-out story prediction too much ? It might change generation speed too, but the current PyTorch implementation **rebuilds a float weight on every linear call**. So a smaller file doesn't mean a faster decoder, those are two separate things.
+
+<Label>Before the conversion</Label>
+
+## Float16 was already a compression step
+
+[The mixed-precision experiment](/posts/mixed-precision/) first moved matrix operations from float32 to float16. The T4 ran it faster and the validation loss matched the float32 control, and it halved the bytes per floating-point weight. Int8 starts from that float16 inference model and tries to halve the projection-weight payload again. This is an inference storage change, not a training recipe, the optimizer and gradients stay in the training checkpoint.
+
+The model has 26,255,872 parameters. Its attention and feed-forward linear layers hold 22,052,864 weights in 36,224 output rows. The tied token embedding and output matrix holds 4,194,304 weights, and octlm leaves that one in float16, because quantizing a tied matrix opens a whole separate quality and implementation question. Norm gains also stay floating point.
+
+<Label>The rule</Label>
+
+## One scale per output row
+
+For a row of weights $w$, take its largest absolute value and map it to signed int8 value 127. The row's scale and each stored integer are
+
+$$
+s = \frac{\max(\max_i |w_i|, 10^{-8})}{127}, \qquad q_i = \operatorname{clip}(\operatorname{round}(w_i/s), -127, 127).
+$$
+
+On a forward pass the approximate weight is $\hat w_i = s q_i$. The scale is float32 and the integer is signed int8. The $10^{-8}$ floor is just so a row of all zeros doesn't blow up. This is called *symmetric per-output-channel weight-only* quantization, input activations aren't quantized and every output row gets its own scale. If we used a single scale for the whole matrix, one big row would reduce the precision of every other row.
+
+### Read the conversion
+
+- With a small maximum, the integer levels represent the other weights pretty closely.
+- A big outlier pushes the scale up for the whole row, and then several small, different float values can land on the same integer.
+- The storage example is five one-byte weights plus one four-byte scale, so 9 payload bytes instead of 10 float16 weight bytes. Short rows barely save anything, but real model rows are hundreds or thousands of weights, so the scale cost is tiny there.
+
+<Label>In octlm</Label>
+
+## Replace the projections, leave the tied output alone
+
+`quantize_int8` walks only the decoder blocks and swaps their linear projections for `Int8Linear`. It requires eval mode and doesn't touch the tied token embedding and output weight. `Int8Linear` stores integer rows and scales as buffers. Its forward casts the integer weights to the input dtype, multiplies by the scales, and then calls a normal floating-point linear.
+
+<Source file="octlm/day5.py" symbol="Int8Linear" />
+
+This makes the storage format easy to inspect and compare, but it is **not a fused int8 matrix multiply**. Rebuilding the float weights for every token can cost more time and temporary memory than reading the smaller stored weights saves. TorchAO has specialized inference paths, but here I deliberately measure the plain PyTorch path we already have before deciding whether a new dependency or kernel is worth it.
+
+Just from parameter counts, the 22,052,864 projection weights take about 42.1 MiB in float16. Their integer values plus 36,224 float32 row scales take about 21.2 MiB, so the payload drops by roughly 20.9 MiB. The final `.pt` files also hold the untouched embedding, norm weights and serialization overhead, so the file comparison below uses **actual saved bytes**. And file size by itself says nothing about peak GPU memory during dequantization.
+
+<Label>Does the smaller file help ?</Label>
+
+## Size, quality and decode speed have to be measured together
+
+`octlm.day5 quant` loads the trained Day 4 checkpoint, evaluates the same held-out blocks before and after conversion, and saves two inference-only state dictionaries. Then it measures 256 generated tokens with the same [KV-cached generator](/posts/kv-cache-in-practice/), prefill included, for both variants. The output records model bytes, tokens per second and the bits-per-byte change.
+
+<Source file="octlm/day5.py" symbol="stage_quant" />
+
+The earlier one-step CPU command only proved that the files and the code path worked on a random model. The finished Kaggle run gives the actual trained-checkpoint answer. It used one Tesla T4, PyTorch 2.10.0+cu128, float16 activations, the same held-out blocks and one timed 256-token generation per variant after warmup.
+
+<Figure label="Measured on a T4" caption="Switch between the saved state-file sizes and cached generation speed. Both bars come from the same trained Day 4 checkpoint. Bits per byte is shown under the bars, because its change is way too small to show honestly as a bar.">
+  <QuantCompare client:visible result={result} />
+</Figure>
+
+The float16 file was 52,542,613 bytes and int8 was 30,652,347 bytes, so **41.66 percent smaller**. Held-out bits per byte went from 0.48392883 to 0.48395385, a +0.00002503 change, which is far below the +0.01 stop threshold. But cached generation dropped from 104.31 to 83.30 tokens per second, **20.14 percent slower**. The path rebuilds float weights on every linear call, which is the likely cost, but one timing can't isolate the cause or give us a speed distribution.
+
+Decision, keep int8 as an opt-in smaller checkpoint and for the Day 8 merge experiment, and keep float16 as the default inference path, because it decoded faster and had marginally better bits per byte. So this int8 implementation is a storage tradeoff, not a speed optimization.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://docs.pytorch.org/ao/stable/workflows/inference.html">TorchAO's quantized inference guide</a> separates weight-only from activation quantization and lists symmetric per-channel int8. <a href="https://docs.pytorch.org/ao/stable/api_reference/api_ref_quantization.html">TorchAO's API reference</a> documents its int8 weight-only config. <a href="https://docs.pytorch.org/tutorials/beginner/saving_loading_models.html">PyTorch's model-saving guide</a> describes state dictionaries. The measured bars and numbers come from <code>runs/kaggle-day5-inference/day5/day5-quant.jsonl</code>, and the decision is in <code>notes/day5.md</code>.</p>
+</Callout>

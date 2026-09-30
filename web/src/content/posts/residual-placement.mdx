@@ -18,7 +18,7 @@ import ResidualStream from "../../widgets/ResidualStream.tsx";
 export const grid = variantGrid();
 export const row = (name) => grid.find((r) => r.variant === name);
 
-A Transformer block has two parts, attention and a feed-forward layer, and each is wrapped in a residual addition and a norm. The order of those three operations has a name. The 2017 paper added first and normalized after, called post-norm. GPT-2 and almost everything since normalize first, inside the branch, called pre-norm. EXP-015 tested whether that choice matters at our scale.
+A Transformer block has two parts, attention and a feed-forward layer, and each one is wrapped in a residual addition and a norm. And the order of those three operations actually has a name. The 2017 paper added first and normalized after, that's post-norm. GPT-2 and almost everything since normalize first, inside the branch, that's pre-norm. EXP-015 tested whether that choice matters at our scale.
 
 <Label>The two layouts</Label>
 
@@ -30,8 +30,8 @@ A Transformer block has two parts, attention and a feed-forward layer, and each 
 
 ### What changes
 
-- In **pre-norm**, the residual stream is the embedding plus every block's correction. Nothing on the main path rescales it. The gradient of the loss reaches the first layer through additions alone.
-- In **post-norm**, every sum is normalized before it moves on. The main path goes through $2L$ norms, and the gradient has to pass back through each of them.
+- In **pre-norm**, the residual stream is the embedding plus every block's correction. Nothing on the main path rescales it, so the gradient of the loss reaches the first layer through additions alone.
+- In **post-norm**, every sum gets normalized before it moves on. The main path goes through $2L$ norms, and the gradient has to pass back through every one of them.
 
 Both are one line in octlm:
 
@@ -41,9 +41,9 @@ Both are one line in octlm:
 
 ## Why post-norm needs warmup
 
-Xiong et al. analyzed both layouts at initialization. In post-norm, the gradients of the parameters near the output are large, whatever the depth. A large learning rate at step 0 applied to large gradients makes the first updates unstable, which is why the original Transformer needed a learning-rate warmup to train at all. In pre-norm, the gradient scales with $1/\sqrt{L}$ and stays well behaved, and the paper shows pre-norm can train without warmup.
+Xiong et al. analyzed both layouts at initialization. In post-norm, the gradients of the parameters near the output are large, no matter the depth. A big learning rate at step 0 on big gradients makes the first updates unstable, which is why the original Transformer needed a learning-rate warmup to train at all. In pre-norm the gradient scales with $1/\sqrt{L}$ and stays well behaved, and the paper shows pre-norm can train without warmup.
 
-The note drew a methodological rule from this. Removing warmup is a separate change, so it never travels with a residual change. EXP-015 kept Day 1's warmup for both layouts. Only the placement moved.
+The note took a rule out of this for how we run experiments. Removing warmup is a separate change, so it never goes together with a residual change. EXP-015 kept Day 1's warmup for both layouts, only the placement moved.
 
 <Figure label="Playground" caption="The stack unrolled. Add sublayers and compare what reaches the output in each placement.">
   <ResidualStream client:visible />
@@ -53,28 +53,28 @@ The note drew a methodological rule from this. Removing warmup is a separate cha
 
 ## One bit per byte worse
 
-Hypothesis: at four layers with warmup, post-norm should still train, because that is the regime where the paper says it works. The question was how much it costs.
+Hypothesis, at four layers with warmup, post-norm should still train, because that's the regime where the paper says it works. The question was how much it costs.
 
-<Figure label="Measured" caption="Mean bits per byte over three seeds with the seed spread as a bar, baseline spread shaded. The post-norm row sits far to the right of everything else. From notes/day2.md.">
+<Figure label="Measured" caption="Mean bits per byte over three seeds with the seed spread as a bar, baseline spread shaded. The post-norm row sits way to the right of everything else. From notes/day2.md.">
   <GridChart client:visible rows={grid} highlight={["baseline", "post-norm"]} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - Post-norm is {(row("post-norm").code - row("baseline").code).toFixed(2)} bits per byte worse on code and {(row("post-norm").prose - row("baseline").prose).toFixed(2)} worse on prose.
-- Its seed spread is small, {row("post-norm").codeSpread} on code. It is not unstable across seeds. It reliably lands in a worse place.
+- Its seed spread is small, {row("post-norm").codeSpread} on code. So it's not unstable across seeds, it just reliably lands somewhere worse.
 - Parameter count is identical, {row("post-norm").parameters.toLocaleString("en-US")}, because the same norms exist in both layouts. Step time is about the same.
 
-The prediction held in the weak sense. It trained, badly. Four hundred steps with a 40-step warmup was not enough for post-norm to catch up, and nothing in the grid suggests more steps would close a full bit.
+So the prediction held, in the weak sense. It trained, badly. Four hundred steps with a 40-step warmup wasn't enough for post-norm to catch up, and nothing in the grid suggests more steps would close a full bit.
 
-Decision: revert. The Day 1 pre-norm placement stays in every model.
+Decision, revert. The Day 1 pre-norm placement stays in every model.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Removing warmup from pre-norm.** The theory says pre-norm can drop it. The note deferred the question, because changing warmup would invalidate every Day 2 comparison. It never came back as its own experiment, and the Day 4 model keeps a 500-step warmup.
-- **Newer residual variants.** `day-wise.md` listed "newer residual variants" such as DeepNorm and hyper-connections. mHC was a Day 3 experiment and was dropped with the rest of Day 3b.
+- **Removing warmup from pre-norm.** The theory says pre-norm can drop it. The note put the question off, because changing warmup would invalidate every Day 2 comparison. It never came back as its own experiment, and the Day 4 model keeps a 500-step warmup.
+- **Newer residual variants.** `day-wise.md` listed "newer residual variants" like DeepNorm and hyper-connections. mHC was a Day 3 experiment and got dropped with the rest of Day 3b.
 
 <Callout hue="gray" title="Sources">
   <p>Xiong et al., <a href="https://arxiv.org/abs/2002.04745">On Layer Normalization in the Transformer Architecture</a>, for the gradient analysis and warmup. Vaswani et al., <a href="https://arxiv.org/abs/1706.03762">Attention is all you need</a>, for the post-norm layout. The result and decision come from <code>notes/day2.md</code>.</p>

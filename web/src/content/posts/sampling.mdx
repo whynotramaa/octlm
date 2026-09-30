@@ -1,6 +1,6 @@
 ---
 title: Sampling
-description: "A model outputs a distribution, and something has to pick a token from it. Greedy decoding repeats itself on stories. Temperature reshapes the distribution and top-k cuts its tail, and both are one line each. On the trained Day 4 model, both decoders wrote coherent stories, and sampling traded the loops for odder plot turns."
+description: "A model outputs a distribution, and something has to pick a token from it. Greedy decoding repeats itself on stories. Temperature reshapes the distribution and top-k cuts its tail, one line each. On the trained Day 4 model both decoders wrote coherent stories, and sampling traded the loops for weirder plot turns."
 day: 4
 order: 4
 exps: ["EXP-068"]
@@ -26,13 +26,13 @@ export const stats = (greedy) => {
 export const greedy = stats(true);
 export const sampled = stats(false);
 
-[A language model predicts](/posts/next-token-prediction/) a probability for every token in the vocabulary. Generation turns that into text one token at a time. It picks a token, appends it, and runs the model again. Up to Day 3, octlm always picked the most likely token. Day 4 added sampling, because the exit check judges the model's stories, and greedy decoding would make it judge the decoding instead.
+[A language model predicts](/posts/next-token-prediction/) a probability for every token in the vocabulary. Generation turns that into text one token at a time, it picks a token, appends it, and runs the model again. Up to Day 3, octlm always picked the most likely token. Day 4 added sampling, because the exit check judges the model's stories, and with greedy decoding it would be judging the decoding instead.
 
 <Label>The problem</Label>
 
 ## Greedy decoding loops
 
-Greedy decoding takes the argmax at every step. It is deterministic, and on story data it repeats itself. Once a phrase like "and they were very happy" becomes the most likely continuation of itself, the model says it again, and again. Sampling breaks the loop by sometimes picking a less likely token, and two settings control how often and how far.
+Greedy decoding takes the argmax at every step. It's deterministic, and on story data it repeats itself. Once a phrase like "and they were very happy" becomes the most likely continuation of itself, the model says it again, and again, and again. Sampling breaks the loop by sometimes picking a less likely token, and two settings control how often and how far.
 
 <Label>Temperature</Label>
 
@@ -44,24 +44,24 @@ $$
 p_i = \frac{e^{z_i / \tau}}{\sum_j e^{z_j / \tau}}
 $$
 
-At $\tau = 1$ the distribution is the model's own. Below 1 the gaps between scores grow, and the distribution sharpens toward the top token. Above 1 the gaps shrink, and it flattens toward uniform. As $\tau$ approaches 0 it becomes greedy, which is why octlm treats temperature 0 as argmax rather than dividing by zero.
+At $\tau = 1$ the distribution is the model's own. Below 1 the gaps between scores grow, and the distribution sharpens toward the top token. Above 1 the gaps shrink and it flattens toward uniform. As $\tau$ goes to 0 it becomes greedy, which is why octlm treats temperature 0 as argmax instead of dividing by zero.
 
 <Label>Top-k</Label>
 
 ## Keep only the k best tokens
 
-Top-k sets every logit outside the $k$ largest to $-\infty$ before the softmax, so those tokens get exactly zero probability. Temperature alone never removes a token. With thousands of unlikely tokens, their combined probability can be large enough that the model regularly picks nonsense. Top-k cuts that tail.
+Top-k sets every logit outside the $k$ largest to $-\infty$ before the softmax, so those tokens get exactly zero probability. Temperature alone never removes a token. And with thousands of unlikely tokens, their combined probability can be big enough that the model regularly picks nonsense. Top-k cuts that tail.
 
 <Figure label="Playground" caption="Eight candidate next tokens with made-up scores. The probabilities use the same function as octlm's sampling_distribution, and a test checks them against PyTorch at four temperatures and four values of k. The draw count uses a seeded generator.">
   <SamplingPlay client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- At temperature 0, every draw is `" happy"`. That is greedy decoding.
+- At temperature 0, every draw is `" happy"`. That's greedy decoding.
 - At 0.5 the top token takes most of the probability. At 1.5 the less likely tokens get real shares, and the entropy rises toward the 3 bits of a uniform choice among eight.
 - Top-k 3 zeroes five tokens outright, whatever the temperature. The remaining three renormalize to sum to 1.
-- The draw counts follow the probabilities but not exactly. With 200 draws, a token at p = 0.1 lands anywhere from about 12 to 28 times.
+- The draw counts follow the probabilities, but not exactly. With 200 draws, a token at p = 0.1 lands anywhere from about 12 to 28 times.
 
 <Figure label="Chart" caption="Probability of four candidate tokens as the temperature rises, top-k off.">
   <TemperatureSweep client:visible />
@@ -71,47 +71,47 @@ Top-k sets every logit outside the $k$ largest to $-\infty$ before the softmax, 
 
 ## Two functions and a generator
 
-`Decoder.generate` gained `temperature`, `top_k` and a `torch.Generator`. The default temperature is 0, so every earlier day's greedy output is unchanged.
+`Decoder.generate` got `temperature`, `top_k` and a `torch.Generator`. The default temperature is 0, so every earlier day's greedy output stays the same.
 
 <Source file="octlm/model.py" symbol="sample_token" />
 
 <Source file="octlm/model.py" symbol="sampling_distribution" />
 
-`sampling_distribution` is the deterministic half. It filters, scales and applies softmax. The draw itself uses `torch.multinomial` with the seeded generator, so a given seed reproduces the same story. This page can check the distribution against PyTorch and cannot check the draws, because PyTorch's random number generator cannot be matched in the browser.
+`sampling_distribution` is the deterministic half, it filters, scales and applies softmax. The draw itself uses `torch.multinomial` with the seeded generator, so a given seed reproduces the same story. This page can check the distribution against PyTorch but not the draws, because you can't match PyTorch's random number generator in the browser.
 
 <Source file="octlm/model.py" symbol="Decoder.generate" />
 
-Generation still reruns the whole context for every new token. The KV cache that avoids this is EXP-071 on Day 5.
+These Day 4 samples used the generator that reruns the whole context. [Day 5's KV-cached generator](/posts/kv-cache-in-practice/) now reuses past keys and values, and the trained T4 run measured a 10.6 to 15.8 percent speed gain with exact greedy-token parity.
 
 <Label>EXP-068</Label>
 
 ## Twenty stories from the trained model
 
-`octlm.day4 samples` loaded the step-24,000 checkpoint from [the main run](/posts/the-main-run/) and wrote ten fixed prompts twice: once greedy, once at temperature 0.8 with top-k 40, seed 0. Each continuation is 200 new tokens, so most stories stop mid-sentence. All twenty are below, read from the run's `samples.jsonl`.
+`octlm.day4 samples` loaded the step-24,000 checkpoint from [the main run](/posts/the-main-run/) and wrote ten fixed prompts twice, once greedy, once at temperature 0.8 with top-k 40, seed 0. Each continuation is 200 new tokens, so most stories stop mid-sentence. All twenty are below, read from the run's `samples.jsonl`.
 
-<Figure label="Playground" caption="Pick a prompt to read both continuations side by side. Marked words belong to a four-word run that already appeared earlier in the same story, counted on this page from the generated text only.">
+<Figure label="Playground" caption="Pick a prompt to read both continuations side by side. Marked words belong to a four-word run that already showed up earlier in the same story, counted on this page from the generated text only.">
   <StoryCompare client:visible samples={samples} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- All twenty are grammatical, stay with the prompt's characters, and follow a story shape: a problem, then a turn. The errors are logic slips, not broken text.
-- Greedy repeats itself in the way the problem section predicted. Prompt 9 lists "a necklace, a necklace, a ring, and a necklace". In prompt 3 the cat dances, then "was so happy that he started to dance" again. That story alone has {greedy.worst.repeated} of greedy's {greedy.repeated} repeated four-word runs.
-- Sampling removes the loops and adds odder events instead. The dog eats the cat, "Lily thanked Lily", and a dog named Spot talks and drives.
-- Counted over all ten prompts, {greedy.share}% of greedy's four-word runs repeat an earlier run in the same story, against {sampled.share}% for sampling. The gap is real but small, and most of it is one story. At 200 tokens, greedy decoding on this model repeats phrases but never locks into one loop.
+- All twenty are grammatical, stay with the prompt's characters, and follow a story shape, a problem and then a turn. The errors are logic slips, not broken text.
+- Greedy repeats itself exactly the way the problem section predicted. Prompt 9 lists "a necklace, a necklace, a ring, and a necklace". In prompt 3 the cat dances, then "was so happy that he started to dance" again. That story alone has {greedy.worst.repeated} of greedy's {greedy.repeated} repeated four-word runs.
+- Sampling removes the loops and adds weirder events instead. The dog eats the cat, "Lily thanked Lily", and a dog named Spot talks and drives.
+- Counted over all ten prompts, {greedy.share}% of greedy's four-word runs repeat an earlier run in the same story, against {sampled.share}% for sampling. The gap is real but small, and most of it is one story. At 200 tokens, greedy decoding on this model repeats phrases but never gets stuck in one loop.
 
-The note's reading, confirmed by the user on 2026-09-28: both sets pass as coherent for a 26M TinyStories model. That closes the last Day 4 exit check.
+The note's reading, which I checked myself on 2026-09-28, is that both sets pass as coherent for a 26M TinyStories model. That closes the last Day 4 exit check.
 
-Decision: keep temperature 0.8 and top-k 40 as the default for generation.
+Decision, keep temperature 0.8 and top-k 40 as the default for generation.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Top-p, or nucleus, sampling.** It keeps the smallest set of tokens whose probabilities sum to p, which adapts to how confident the model is. Top-k with temperature is enough to stop greedy loops, and adding top-p is one line if the samples need it.
+- **Top-p, or nucleus, sampling.** It keeps the smallest set of tokens whose probabilities sum to p, which adapts to how confident the model is. Top-k with temperature is enough to stop greedy loops, and adding top-p is one line if the samples ever need it.
 - **Repetition penalties.** They hide a weak model's repetition instead of measuring it.
 - **Beam search.** It searches for the single most likely continuation, which makes repetition worse on open-ended text.
 
 <Callout hue="gray" title="Sources">
-  <p>Holtzman et al., <a href="https://arxiv.org/abs/1904.09751">The Curious Case of Neural Text Degeneration</a>, for greedy and beam-search repetition and for top-p. Fan et al., <a href="https://arxiv.org/abs/1805.04833">Hierarchical Neural Story Generation</a>, for top-k sampling. The design and the coherence judgment come from EXP-068 in <code>notes/day4.md</code>. The stories come from <code>runs/kaggle-day4/day4/samples.jsonl</code>. The repeated four-word count is computed on this page and is not in the note.</p>
+  <p>Holtzman et al., <a href="https://arxiv.org/abs/1904.09751">The Curious Case of Neural Text Degeneration</a>, for greedy and beam-search repetition and for top-p. Fan et al., <a href="https://arxiv.org/abs/1805.04833">Hierarchical Neural Story Generation</a>, for top-k sampling. The design and the coherence judgment come from EXP-068 in <code>notes/day4.md</code>. The stories come from <code>runs/kaggle-day4/day4/samples.jsonl</code>. The repeated four-word count is computed on this page and isn't in the note.</p>
 </Callout>

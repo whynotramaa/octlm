@@ -1,0 +1,95 @@
+---
+title: A KV cache that actually generates
+description: "Step through generation with the cache on and off. On the trained T4 model the cached path kept every greedy token, used 256 KiB to 2 MiB, and ran 10.6 to 15.8% faster in single timings."
+day: 5
+order: 3
+exps: ["EXP-071"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import KvDecode from "../../widgets/KvDecode.tsx";
+import GqaCache from "../../widgets/GqaCache.tsx";
+import LineChart from "../../charts/LineChart.tsx";
+import cacheRuns from "../../data/runs/day5-cache.json";
+
+export const speedSeries = [
+  { name: "recompute", slot: 1, points: cacheRuns.map((row) => [row.length, row.naive_tokens_per_second]) },
+  { name: "KV cache", slot: 2, points: cacheRuns.map((row) => [row.length, row.cached_tokens_per_second]) },
+];
+
+Look at what happens at the third generated token. The old generator projects keys and values for tokens 1, 2 and 3 all over again. The cached one only projects token 3, and then its new query reads the saved keys for 1 and 2. Step through the diagram and turn the cache off, you'll see all the repeated cells.
+
+<Figure label="Playground" caption="Move along a short decode. Orange cells are computed right now, blue cells are reused, green is the current query. Turn the cache off to see the repeated projections.">
+  <KvDecode client:visible />
+</Figure>
+
+<Label>Read the cells</Label>
+
+## Save the past keys, compute only the new pair
+
+[Day 2's GQA post](/posts/gqa-and-kv-cache/) worked out the memory cost of these blue cells before any code stored them. [Day 4's sampling post](/posts/sampling/) used the orange path, recompute everything every step. Day 5 finally builds the blue path, the one that reuses.
+
+The first pass over a prompt computes a query, key and value for every position. And when you append one new token, the past tokens' keys and values don't change. So for $t$ generated positions after a one-token prompt, a simplified count of key and value projections is $1 + 2 + \cdots + t = t(t+1)/2$ without a cache, and just $t$ with one. But attention still reads all the past keys at each step, so the cache doesn't make decoding constant-time. GPU launches, memory traffic and the final vocabulary projection still cost time. The diagram shows saved work, not a measured speed ratio.
+
+<Label>The implementation</Label>
+
+## One pair of tensors per layer
+
+`Decoder.forward_cached` takes a new chunk of tokens and an optional list of past `(key, value)` tensors. Each layer projects the new chunk, appends it to that layer's pair, runs attention against the full pair and returns the updated cache. `generate_cached` fills the cache from the prompt first, then sends one token per step. The original `forward` and `generate` are still there as the baseline to compare against.
+
+<Source file="octlm/model.py" symbol="Decoder.forward_cached" />
+
+RoPE rotates a key by its **absolute position** before the key gets stored. So on the next step the old keys have to keep their old angles, if you rotate the whole cache again the attention scores change. The cached call slices the position table starting from the number of tokens already cached, so a fresh query and key get the right offsets.
+
+Then there's a masking trap which is less obvious. In a normal full pass the query and key lengths match and a triangular causal mask is enough. With a cache, a three-token update can have three queries and hundreds of keys. And PyTorch's `is_causal=True` on a non-square attention matrix uses upper-left alignment, which would make the new queries attend to the wrong prefix. So octlm builds an explicit mask from absolute row positions for multi-token updates. A one-token update doesn't need a mask at all, because every saved key is in its past.
+
+<Source file="octlm/model.py" symbol="CausalSelfAttention.forward_cached" />
+
+The cache is only for full SDPA attention, on purpose. A sliding-window or compressed-attention cache needs different eviction or pooling rules, so the function just rejects those configs. When generated text fills the trained 512-token context, `generate_cached` rebuilds the cache from the newest 512 tokens. That keeps the original generator's context behavior, but we lose the reuse at that boundary. The planned 64, 256 and 512-token measurements all stay inside the window anyway.
+
+<Label>The memory tradeoff</Label>
+
+## GQA is what makes this cache small enough
+
+For one sequence the cache stores two tensors per layer, so its payload is
+
+$$
+2 \times L \times H_{kv} \times d_{head} \times T \times b
+$$
+
+where $L$ is layers, $H_{kv}$ is key-value heads, $d_{head}$ is the width per head, $T$ is cached positions and $b$ is bytes per element. The Day 4 model has 8 layers, 2 KV heads, 64 values per head and float16 values, so that's **4 KiB per cached position**, which means 256 KiB at 64, 1 MiB at 256 and 2 MiB at 512. That's tensor payload, before allocator overhead. With eight KV heads every one of these numbers would be four times bigger.
+
+<Figure label="Playground" caption="Pick the Day 4 model, two KV heads and fp16 to reproduce its cache formula. Lengths past 512 here are just the formula extrapolating, the trained Day 4 model can't cache them in one pass.">
+  <GqaCache client:visible />
+</Figure>
+
+The benchmark adds up the *actual* key and value tensor sizes and asserts that they equal this formula. All three measured sizes passed.
+
+<Label>Does it pay off ?</Label>
+
+## Match the old tokens first, then time both paths
+
+The matched control is Day 4's trained 26M modern checkpoint, temperature 0, batch size 1 and a BOS-only prompt. After warming up both paths, `octlm.day5 cache` times 64, 256 and 512 new tokens on the same device and dtype. It synchronizes CUDA around each timer and records naive and cached tokens per second, cache bytes and whether the greedy tokens are exactly equal. If even one token changes, the speed result doesn't count until parity is fixed.
+
+<Source file="octlm/day5.py" symbol="stage_cache" />
+
+The small-model CPU check matched all 12 generated tokens across an eight-token context boundary. A separate cached three-token call matched the full forward logits, which exercises the offset mask. And then the trained-checkpoint test matched **every greedy token** at all three lengths.
+
+<Figure label="Measured on a T4" caption="Tokens per second for the Day 4 checkpoint, one timed run per length after warmup. Hover the three lengths for exact values. Both paths include the BOS prefill, and CUDA was synchronized around each timer. The y axis starts at 80 so the gap is readable.">
+  <LineChart client:visible series={speedSeries} x={{ label: "new tokens", ticks: [64, 256, 512] }} y={{ label: "tokens per second", format: "fixed2", domain: [80, 110] }} markers height={300} />
+</Figure>
+
+| New tokens | Recompute | KV cache | Speed ratio | Cache payload |
+| ---: | ---: | ---: | ---: | ---: |
+| 64 | 90.74 tok/s | 105.05 tok/s | 1.158× | 256 KiB |
+| 256 | 90.06 tok/s | 101.37 tok/s | 1.126× | 1 MiB |
+| 512 | 94.06 tok/s | 104.00 tok/s | 1.106× | 2 MiB |
+
+So the cached path was 10.6 to 15.8 percent faster in these single T4 timings. That's way smaller than the projection-count reduction would make you expect, because attention still reads every saved key, and the PyTorch calls and the vocabulary projection still take time. And one timing per length can't give us a stable speed distribution, so don't read too much into the exact numbers. Decision, keep the cached generator for full SDPA attention, and the generic generator stays for the other attention configs.
+
+<Callout hue="gray" title="Sources">
+  <p>The <a href="https://huggingface.co/docs/transformers/kv_cache">Hugging Face cache guide</a> describes key-value reuse and the memory tradeoff. <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">PyTorch's SDPA documentation</a> specifies causal alignment for non-square attention. <a href="https://arxiv.org/abs/2104.09864">RoFormer</a> defines the position rotations. The measured table and chart come from <code>runs/kaggle-day5-inference/day5/day5-cache.jsonl</code>, and the design and decision are in <code>notes/day5.md</code>.</p>
+</Callout>

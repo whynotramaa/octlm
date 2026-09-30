@@ -7,12 +7,14 @@ import { encode, train } from "../src/lib/bpe.ts";
 import { attentionMask, compressedMask, maskDensity } from "../src/lib/masks.ts";
 import { type Matrix, maxAbsDifference } from "../src/lib/matrix.ts";
 import { toBfloat16, toFloat16 } from "../src/lib/floats.ts";
+import { quantizeRow, seedSpread } from "../src/lib/day5.ts";
 import { hiddenSize, kvCacheBytes, parameterCount } from "../src/lib/model.ts";
 import { tiledAttention } from "../src/lib/online-softmax.ts";
 import { applyRope, ropeAngles, ropeTables, sinusoidal } from "../src/lib/positions.ts";
 import { pretokenize } from "../src/lib/pretokenize.ts";
 import { samplingDistribution } from "../src/lib/sampling.ts";
 import { learningRate } from "../src/lib/schedule.ts";
+import { resultStatus, roadmap } from "../src/lib/roadmap.ts";
 
 const TOLERANCE = 1e-5;
 
@@ -89,4 +91,52 @@ test("float16 and bfloat16 rounding match torch casts", () => {
     assert.equal(toFloat16(row.value), row.float16, `float16 ${row.value}`);
     assert.equal(toBfloat16(row.value), row.bfloat16, `bfloat16 ${row.value}`);
   }
+});
+
+test("Day 5 seed spread and row quantization match Python", () => {
+  const f = fixture("day5");
+  const range = seedSpread([0.48, 0.5, 0.52]);
+  assert.ok(Math.abs(range.mean - f.spread.mean) < 1e-12);
+  assert.ok(Math.abs(range.spread - f.spread.spread) < 1e-12);
+  const row = quantizeRow(f.weights);
+  assert.deepEqual(row.codes, f.codes);
+  assert.ok(Math.abs(row.scale - f.scale) < 1e-7);
+  assert.equal(quantizeRow([-2.5 / 127, 1]).codes[0], -2);
+});
+
+test("roadmap waits for an experiment's exit check", () => {
+  const note = "## EXP-071: cache\n### Result\nLocal parity passed. GPU timing pending.\n- [ ] EXP-071 has trained speed.\n";
+  assert.equal(resultStatus(note, "EXP-071"), "built");
+  assert.equal(resultStatus(note.replace("[ ]", "[x]"), "EXP-071"), "done");
+});
+
+test("Day 3 is marked as a switched plan", () => {
+  assert.ok(roadmap().find((day) => day.day === 3)?.experiments.every((exp) => exp.status === "switched"));
+});
+
+test("published Day 5 inference records preserve the measurement invariants", () => {
+  const cache = JSON.parse(readFileSync(new URL("../src/data/runs/day5-cache.json", import.meta.url), "utf-8"));
+  assert.deepEqual(cache.map((row: any) => row.length), [64, 256, 512]);
+  for (const row of cache) {
+    assert.equal(row.greedy_equal, true);
+    assert.equal(row.cache_bytes, row.length * 4096);
+  }
+  const [quant] = JSON.parse(readFileSync(new URL("../src/data/runs/day5-quant.json", import.meta.url), "utf-8"));
+  assert.ok(Math.abs(quant.int8_bits_per_byte - quant.baseline_bits_per_byte - quant.bits_per_byte_delta) < 1e-12);
+  assert.ok(quant.int8_model_bytes < quant.baseline_model_bytes);
+});
+
+test("completed Day 5 MTP uses all matched seeds and the frozen threshold", () => {
+  const mtp = JSON.parse(readFileSync(new URL("../src/data/runs/mtp.json", import.meta.url), "utf-8"));
+  const controls = JSON.parse(readFileSync(new URL("../src/data/runs/seed-spread.json", import.meta.url), "utf-8"));
+  assert.deepEqual(mtp.map((row: any) => row.seed), [1337, 1338, 1339]);
+  for (const row of mtp) {
+    assert.equal(row.tokens, 98304000);
+    assert.equal(row.data_hash, controls[0].data_hash);
+    assert.equal(row.tokenizer_hash, controls[0].tokenizer_hash);
+  }
+  const modern = seedSpread(controls.filter((row: any) => row.variant === "modern").map((row: any) => row.bits_per_byte));
+  const baseline = seedSpread(controls.filter((row: any) => row.variant === "baseline").map((row: any) => row.bits_per_byte));
+  assert.ok(seedSpread(mtp.map((row: any) => row.bits_per_byte)).mean - modern.mean > Math.max(modern.spread, baseline.spread));
+  assert.ok(roadmap().find((day) => day.day === 5)?.experiments.every((exp) => exp.status === "done"));
 });

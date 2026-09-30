@@ -1,0 +1,110 @@
+---
+title: Can six seeds settle an architecture choice?
+description: "Six dots, two model stacks, and one question, is the gap between the averages bigger than the noise between seeds ? Move the dots, then look at the six real Day 5 runs. Modern wins by almost seven times the seed spread."
+day: 5
+order: 1
+exps: ["EXP-069"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import SpreadDecision from "../../widgets/SpreadDecision.tsx";
+import RunCurve from "../../widgets/RunCurve.tsx";
+import RangeChart from "../../charts/RangeChart.tsx";
+import metrics from "../../data/runs/day4-metrics.json";
+import spreadRuns from "../../data/runs/seed-spread.json";
+import { noteTable } from "../../lib/notes.ts";
+import { seedSpread } from "../../lib/day5.ts";
+
+export const seeds = noteTable(5, "Kaggle result, 2026-09-30");
+export const rangeRows = ["baseline", "modern"].map((name) => {
+  const { mean, spread } = seedSpread(spreadRuns.filter((row) => row.variant === name).map((row) => row.bits_per_byte));
+  return { name, value: mean, spread };
+});
+
+Okay so, train one model three times and only change the random seed. You don't get one validation score, you get three. Do the same for a second model and the two groups can overlap even when one average is lower. This is exactly what hit us on Day 2, most of the architecture gaps were smaller than the spread between copies of the *same* model. So Day 5 repeats the comparison, but with a much bigger training budget this time.
+
+<Figure label="Playground" caption="Made-up three-seed bits-per-byte scores. Move the mean gap and the seed range and see when the project's decision rule calls the difference big enough. These are examples, the real six runs are further down.">
+  <SpreadDecision client:visible />
+</Figure>
+
+<Label>Read the dots</Label>
+
+## Three runs per stack, one threshold
+
+Each dot is one possible validation score. The **modern improvement** slider moves all three modern dots left, and left is better, because lower bits per byte means the model put more probability on the held-out text. The **three-seed spread** slider pushes the dots in each row apart. Whichever row has the bigger range, that range becomes Day 5's minimum detectable effect, and if the gap between the two means is smaller than that, we call it unresolved. Try a gap of 0.02 with a spread of 0.04, and then shrink the spread to 0.01 without touching the gap. Same mean difference, but now it actually means something, because the runs got more consistent.
+
+What does a seed actually change ? The initial weights, the order of the training blocks, and the other random draws. All six real runs use the same tokenizer, the same held-out blocks, batch shape, step count and training procedure. So this range is a practical noise floor for this exact setup, not some universal confidence interval.
+
+On Day 2 the baseline range on code was 0.043 bits per byte. Those models saw 819,200 tokens each, roughly 0.25 tokens per parameter, which is basically nothing. [The grid](/posts/reading-the-grid/) shows why those decimals couldn't settle most choices. And the planned Day 3 budget would still have left the models badly undertrained, so [the plan changed](/posts/why-the-plan-changed/).
+
+<Label>The control</Label>
+
+## Same data and same budget for both stacks
+
+The `baseline` stack uses learned positions, LayerNorm, GELU and eight separate key-value heads. The `modern` stack uses [RoPE](/posts/rope/), [RMSNorm](/posts/rmsnorm/), [SwiGLU](/posts/swiglu/) and two grouped key-value heads. Both use PyTorch's [scaled dot product attention](/posts/sdpa-and-flashattention/), and we keep that kernel the same on purpose, so an attention backend difference can't sneak in and pretend to be an architecture result.
+
+The baseline has 29,639,680 parameters and modern has 26,255,872, the baseline is bigger because of full multi-head attention. So to be honest this is a **stack comparison**, not a parameter-matched ablation. It tells us which stack does better under this budget, it can't tell us which of the four changes caused the gap. For that you'd go back to Day 2's single-change experiments, with their noise problem attached.
+
+Each run trains for 6,000 steps × 32 sequences × 512 tokens = 98,304,000 tokens. 512-token contexts, an 8,192-entry vocabulary, the same fixed validation blocks. Three seeds per variant, so six runs. The budget is one quarter of Day 4's main run, long enough to compare at a trained scale and short enough that six runs fit in the GPU time we had. Whether it's *long enough to actually resolve a gap*, that's one of the things the experiment finds out.
+
+<Source file="octlm/day5.py" symbol="variant_config" />
+
+<Label>The reference run</Label>
+
+## One trained model is a baseline, not a seed range
+
+Day 4's modern model trained for 393 million tokens and got to 0.4839 validation bits per byte. That gives Day 5 a throughput and quality reference, but it is **not** one of the matched 98.3 million-token controls, if we mix budgets the architecture comparison means nothing. The full curve is here so you can see the difference between one training trajectory and a seed comparison.
+
+<Figure label="Measured on Day 4" caption="The 24,000-step Day 4 modern run, read from its Kaggle metrics. Pick loss, bits per byte or learning rate and zoom into the tail. Day 5's six shorter runs show up below as final scores only.">
+  <RunCurve client:visible records={metrics} />
+</Figure>
+
+The curve was still falling slowly at the end. That's one of the reasons Day 5 uses a *matched shorter budget* for both stacks, instead of comparing a short baseline against this longer modern run.
+
+<Label>From runs to a decision</Label>
+
+## Finish all six runs before comparing means
+
+`octlm.day5 spread` trains `baseline` and `modern` at seeds 1337, 1338 and 1339. Every finished run writes its config hash, data hash, tokenizer hash, model size, device, PyTorch version, validation loss, bits per byte and seconds per step. If a Kaggle session dies halfway, and they do, the runner reads the output, checks those hashes and only resumes the missing seeds. It rejects duplicate seeds and rows that came from different inputs.
+
+<Source file="octlm/day5.py" symbol="stage_spread" />
+
+The result reports each variant's mean and max-minus-min range, then compares the gap between the means with the larger range. If the first run diverges or doesn't fit in the session, the stop condition is to revise the budget from the measured throughput. If the gap doesn't clear the range, the decision is unresolved. A lower average alone is not enough, that was the whole lesson of Day 2.
+
+<Label>The result</Label>
+
+## Six runs on a T4, and the gap is almost seven times the noise
+
+All six runs finished on one Kaggle T4 with PyTorch 2.10 in float16. Every row has the same data hash, tokenizer hash and 98,304,000 training tokens. Nothing diverged, every validation curve fell at every 1,000-step check.
+
+<Figure label="Measured on a T4" caption="Mean validation bits per byte for each stack across seeds 1337, 1338 and 1339. The bar width is the max-minus-min seed range, and the shaded band is the baseline range. Hover a row for exact values.">
+  <RangeChart client:visible rows={rangeRows} label="validation bits per byte, lower is better" baseline="baseline" />
+</Figure>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Stack</th><th>Seed 1337</th><th>Seed 1338</th><th>Seed 1339</th><th>Mean</th><th>Spread</th><th>s/step</th></tr></thead>
+  <tbody>{seeds.map((r) => <tr><td>{r["Variant"]}</td><td>{r["Seed 1337"]}</td><td>{r["Seed 1338"]}</td><td>{r["Seed 1339"]}</td><td>{r["Mean bpb"]}</td><td>{r["Spread"]}</td><td>{r["s/step"]}</td></tr>)}</tbody>
+</table>
+</div>
+
+The bigger range is modern's, 0.0050 bits per byte, so that becomes the minimum detectable effect for the rest of Day 5. The means differ by 0.0338, which is 6.8 times that threshold, and even the worst modern seed beats the best baseline seed by 0.0295. On Day 2 the baseline range was 0.043 on code after 0.8M tokens, here it's 0.0020 on TinyStories after 98.3M. The corpus changed too, so it's not a clean before-and-after, but the decision is not sitting inside the noise anymore.
+
+**Decision: keep `modern` as the default stack.** It gets 5.8% lower bits per byte with 11% fewer parameters, per token of training.
+
+<Label>The catch</Label>
+
+## Per token, not per second
+
+And here's the catch. Modern took 0.625 seconds per step against the baseline's 0.283, so 2.2 times as long, 62 minutes per run against 28. We matched tokens, not wall-clock time. If you gave the baseline the same hour it would see about twice the data, and this run doesn't tell us where it would land.
+
+The likely cause is the attention kernel. PyTorch 2.10's [SDPA documentation](https://docs.pytorch.org/docs/2.10/generated/torch.nn.functional.scaled_dot_product_attention.html) says grouped-query attention only works with the Flash and math kernels. Flash needs a newer GPU than the T4, so modern's two KV heads probably push it onto the slow math kernel, while the baseline's eight heads get to keep the memory-efficient one. SwiGLU and RoPE add a bit of cost too. But that's a lead, not a measurement, I haven't profiled it. Day 4's 0.614 seconds per step would carry the same cost.
+
+[EXP-070](/posts/mtp-at-the-day4-scale/) now has its control mean of 0.5539 and its 0.0050 threshold.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">PyTorch's reproducibility note</a> explains why a seed result is tied to a device and software version. <a href="https://arxiv.org/abs/2305.13245">Ainslie et al.</a> define the grouped-query choice in the modern stack. Experiment settings and the decision are in <code>notes/day5.md</code>, the six measured rows are <code>runs/kaggle-day5-spread/day5/seed-spread.jsonl</code>, and the 24,000-step reference curve is <code>runs/kaggle-day4/day4/metrics.jsonl</code>.</p>
+</Callout>

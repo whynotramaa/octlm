@@ -404,3 +404,12 @@ New numbers start at EXP-065, so no retired number means two things.
 - [x] The reason for the change is recorded with our own numbers.
 - [x] Every first-plan experiment has a new number or a reason it was dropped.
 - [x] Every conflict with `AGENTS.md` and `day-wise.md` is recorded.
+
+## Session on 2026-09-29: name the switched plan on the web journal
+
+The Day 3 experiment pages showed `Result pending`, which suggested the withdrawn GPU runs were
+still scheduled. The index, post callouts, and roadmap now say `Plan switched`. The callout explains
+the short Day 2 and planned Day 3 token budgets, the seed noise, and the move to a trained
+TinyStories model followed by an instruction-following checkpoint. It links to the full decision in
+the Day 3 plan-change post. The built code and analytical cache or mask results remain described in
+their individual posts; the withdrawn trained comparisons are not marked as measured.

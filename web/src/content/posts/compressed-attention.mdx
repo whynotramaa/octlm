@@ -1,6 +1,6 @@
 ---
 title: Compressed attention and the copy probe
-description: "Keep the recent keys exactly and replace older ones with block averages, for a fraction of the cache. Day 3 built it, fixed a subtle problem with RoPE, and designed a probe that a 3M model could actually pass."
+description: "Keep the recent keys exact and replace older ones with block averages, for a fraction of the cache. Day 3 built it, fixed a subtle problem with RoPE, and designed a probe that a 3M model could actually pass."
 day: 3
 order: 3
 exps: ["EXP-018"]
@@ -14,30 +14,30 @@ import Callout from "../../components/Callout.astro";
 import CompressedView from "../../widgets/CompressedView.tsx";
 import PoolBlocks from "../../widgets/PoolBlocks.tsx";
 
-A sliding window throws distant tokens away completely. Compression keeps a lossy summary of them instead. Every block of $b$ old keys becomes one averaged key, and the same for values. The cache for old positions shrinks by a factor of $b$, and a query can still reach far back, blurrily.
+A sliding window throws distant tokens away completely. Compression keeps a lossy summary of them instead. Every block of $b$ old keys becomes one averaged key, same for values. So the cache for old positions shrinks by a factor of $b$, and a query can still reach far back, just blurrily.
 
 <Label>Definition</Label>
 
 ## Two kinds of columns, pooled blocks and exact recent keys
 
-DeepSeek's Native Sparse Attention runs three branches and mixes them with a learned gate: a compressed branch that mean-pools consecutive key-value blocks, a selected branch that picks the top-k blocks by their compressed scores, and a sliding window of exact recent tokens.
+DeepSeek's Native Sparse Attention runs three branches and mixes them with a learned gate, a compressed branch that mean-pools consecutive key-value blocks, a selected branch that picks the top-k blocks by their compressed scores, and a sliding window of exact recent tokens.
 
-EXP-018 built two of the three: the compressed branch and the window. Each query attends over the pooled blocks first, then the exact keys. A pooled block becomes visible only once all of its tokens have left the query's window, so no token is ever counted twice.
+EXP-018 built two of the three, the compressed branch and the window. Each query attends over the pooled blocks first, then the exact keys. A pooled block only becomes visible once all of its tokens have left the query's window, so no token ever gets counted twice.
 
 <Figure label="Playground" caption="16 positions. The first columns, b0 onward, are pooled blocks. The rest are the exact keys under a sliding window. Filled cells are allowed. A test checks this mask against octlm's compressed_mask. The cache figures come from kv_cache_bytes at the Day 2 shape.">
   <CompressedView client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- Early rows see only exact keys. Their past fits inside the window.
+- Early rows only see exact keys, their past fits inside the window.
 - Later rows gain block columns one block at a time, as each block clears the window.
-- A larger block means fewer pooled columns and a smaller cache, and each column averages more tokens, so it says less about any one of them.
+- A bigger block means fewer pooled columns and a smaller cache, but each column averages more tokens, so it says less about any single one of them.
 - At 4K positions with a 256 window, block 4 cuts the Day 2 cache from 4 MiB to about 1.2 MiB.
 
 <Source file="octlm/model.py" symbol="compressed_mask" />
 
-<Figure label="Playground" caption="Twenty-four made-up key values. Old keys are averaged per block, recent ones stay exact.">
+<Figure label="Playground" caption="Twenty-four made-up key values. Old keys get averaged per block, recent ones stay exact.">
   <PoolBlocks client:visible />
 </Figure>
 
@@ -45,7 +45,7 @@ EXP-018 built two of the three: the compressed branch and the window. Each query
 
 ## Pool before rotating, not after
 
-With RoPE, each key has already been rotated by its position. Averaging rotated keys averages vectors pointing in different directions. The average is shorter than its parts, by an amount that depends on how spread out the block's angles are, and that biases the scores by block position.
+With RoPE, each key has already been rotated by its position. Averaging rotated keys means averaging vectors pointing in different directions. The average is shorter than its parts, by an amount that depends on how spread out the block's angles are, and that biases the scores by block position. This one is easy to miss.
 
 The note's fix is to pool the keys before rotation, then rotate each pooled block once, at the position of its midpoint. NSA solves the same problem with an encoding inside each block. The note records the midpoint rotation as a cheaper version of that idea and a deviation from the paper.
 
@@ -53,22 +53,22 @@ The note's fix is to pool the keys before rotation, then rotate each pooled bloc
 
 <Label>The probe</Label>
 
-## A needle test a 3M model can pass
+## A needle test a 3M model can actually pass
 
-`PLAN.md` asked for "retrieval accuracy on a needle style synthetic test". The usual needle test hides a fact in a long document and asks a question about it. A 3.3 million parameter base model cannot answer questions, so that test would measure only its inability to follow an instruction. The note called the substitute a judgment call and flagged it everywhere it appears.
+`PLAN.md` asked for "retrieval accuracy on a needle style synthetic test". The usual needle test hides a fact in a long document and asks a question about it. But a 3.3 million parameter base model can't answer questions, so that test would only measure that it can't follow an instruction. The note called the substitute a judgment call and flagged it everywhere it shows up.
 
 The substitute is a copy probe:
 
 1. Take a block of real text and plant a random 8-token sequence at depth $p$.
 2. Repeat the same 8 tokens at the end of the block.
 3. Measure the model's loss on that final copy.
-4. Compare it with a control block where depth $p$ holds different random tokens, so the final 8 tokens appear for the first time.
+4. Compare it with a control block where depth $p$ holds different random tokens, so the final 8 tokens show up for the first time.
 
-A model that carried the earlier sequence forward predicts the repeat far better than a first sighting. That skill, copying a span it has seen, is called induction, and it appears even in tiny models. It disappears when the mechanism that carries the reference is cut. So the probe should show full attention recovering the needle at every depth, the window recovering it only within reach, and compression recovering it partially everywhere.
+A model that carried the earlier sequence forward predicts the repeat way better than a first sighting. That skill, copying a span it has already seen, is called induction, and it shows up even in tiny models. And it disappears when the mechanism that carries the reference gets cut. So the probe should show full attention recovering the needle at every depth, the window recovering it only within reach, and compression recovering it partially everywhere.
 
 <Source file="octlm/day3.py" symbol="copy_probe" />
 
-The note is explicit that this is not the long-context needle test the literature runs.
+The note is clear that this isn't the long-context needle test the literature runs.
 
 <Label>The hypothesis</Label>
 
@@ -76,7 +76,7 @@ The note is explicit that this is not the long-context needle test the literatur
 
 Block compression cuts the cache by roughly the block size outside the window, and costs less on code than a plain window with the same cache budget. On the copy probe, full attention recovers the needle at every depth, the window only inside itself, and compression partially at every depth.
 
-Stop condition: blocks of 4 and 8 against an uncompressed control, three seeds, with the probe swept across depth for all three configurations. The probe would reuse the first seed's trained models rather than train its own, which saved about 12 minutes of T4 time for no loss of information.
+Stop condition, blocks of 4 and 8 against an uncompressed control, three seeds, with the probe swept across depth for all three configs. The probe would reuse the first seed's trained models instead of training its own, which saved about 12 minutes of T4 time without losing any information.
 
 <Label>Status</Label>
 
@@ -86,7 +86,7 @@ The plan changed before the run. The code stays behind default-off flags.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
 - **NSA's selection branch and gate.** Selection is where the paper's hardware-aligned kernel work lives. A top-k over blocks at 3.3M parameters would have measured our implementation of top-k, not the idea.
 - **A question-answer needle test.** Replaced by the copy probe, for the reason above.

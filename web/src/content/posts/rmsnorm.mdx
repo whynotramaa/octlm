@@ -19,7 +19,7 @@ export const grid = variantGrid();
 export const row = (name) => grid.find((r) => r.variant === name);
 export const pct = (a, b) => (((a - b) / b) * 100).toFixed(1);
 
-LayerNorm does two things to a vector. It subtracts the mean, and it divides by the standard deviation. The RMSNorm paper asked whether the first is needed. LLaMA, Qwen and most current decoders answer no, and use RMSNorm. EXP-010 swapped it into the Day 1 baseline and changed nothing else.
+LayerNorm does two things to a vector, it subtracts the mean and it divides by the standard deviation. The RMSNorm paper asked, do we even need the first one ? LLaMA, Qwen and most current decoders say no, and use RMSNorm. EXP-010 swapped it into the Day 1 baseline and changed nothing else.
 
 <Label>Definition</Label>
 
@@ -31,19 +31,19 @@ $$
 \operatorname{RMSNorm}(x) = g \odot \frac{x}{\sqrt{\tfrac{1}{C}\sum_i x_i^2 + \epsilon}}
 $$
 
-Compare LayerNorm, $\gamma \odot (x - \mu)/\sigma + \beta$. RMSNorm has no $\mu$ and no $\beta$. If the mean happens to be 0, the root mean square equals the standard deviation and the two agree exactly, apart from the bias.
+Compare with LayerNorm, $\gamma \odot (x - \mu)/\sigma + \beta$. RMSNorm has no $\mu$ and no $\beta$. If the mean happens to be 0, the root mean square equals the standard deviation and the two agree exactly, apart from the bias.
 
-The paper's argument is that LayerNorm's benefit comes from the rescaling, which makes a layer's output independent of how large its input is. Re-centering is the part it can drop.
+The paper's argument is that LayerNorm's benefit comes from the rescaling, which makes a layer's output independent of how big its input is. The re-centering is the part you can drop.
 
 <Figure label="Playground" caption="The same six-number vector through both norms, gain 1, no bias. Use the buttons to shift or scale every entry.">
   <NormPlay client:visible initial="both" />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- "Double every entry" leaves both outputs unchanged. Both norms are invariant to scale.
-- "Add 1 to every entry" leaves LayerNorm unchanged and moves RMSNorm. RMSNorm is not invariant to a shift, so its output mean is whatever the input's shape makes it.
-- When the input mean is near 0, the two outputs nearly coincide.
+- "Double every entry" leaves both outputs unchanged, both norms don't care about scale.
+- "Add 1 to every entry" leaves LayerNorm unchanged and moves RMSNorm. RMSNorm isn't invariant to a shift, so its output mean is whatever the input's shape makes it.
+- When the input mean is near 0, the two outputs almost overlap.
 
 <Figure label="Diagram" caption="The operations each norm applies to one vector, in order.">
   <NormOps />
@@ -57,38 +57,38 @@ The paper's argument is that LayerNorm's benefit comes from the rescaling, which
 
 `rsqrt` is one over the square root. The statistic is computed in float32 even when the activations are half precision, because squaring small half-precision numbers loses too much. The gain starts at 1, and `make_norm` picks LayerNorm or RMSNorm from the config's `norm` switch.
 
-The paper keeps an optional bias term. LLaMA's version has a gain only, and octlm follows LLaMA. The note records that the bias variant was not tested.
+The paper keeps an optional bias term. LLaMA's version only has a gain, and octlm follows LLaMA. The note records that the bias variant wasn't tested.
 
 <Label>EXP-010</Label>
 
 ## Same quality, 8.9 percent slower
 
-Hypothesis: RMSNorm matches LayerNorm's quality and is faster. The paper reports speedups from 7 to 64 percent across models and 6.9 to 9.3 percent on a Transformer.
+Hypothesis, RMSNorm matches LayerNorm's quality and is faster. The paper reports speedups from 7 to 64 percent across models and 6.9 to 9.3 percent on a Transformer.
 
-The test is one row of the Day 2 variant grid, with 3.3 million parameters, 400 steps, three seeds per variant, on a Colab T4. [Reading the grid](/posts/reading-the-grid/) explains the grid and its noise.
+The test is one row of the Day 2 variant grid, 3.3 million parameters, 400 steps, three seeds per variant, on a Colab T4. [Reading the grid](/posts/reading-the-grid/) explains the grid and its noise.
 
-<Figure label="Measured" caption="Mean bits per byte over three seeds. The bar is the spread across seeds, drawn centered on the mean. The gray band is the baseline's own seed spread: a gap inside it is noise at this budget. Hover a row for its numbers.">
+<Figure label="Measured" caption="Mean bits per byte over three seeds. The bar is the spread across seeds, centered on the mean. The gray band is the baseline's own seed spread, a gap inside it is noise at this budget. Hover a row for its numbers.">
   <GridChart client:visible rows={grid} highlight={["baseline", "rmsnorm"]} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - On code, RMSNorm is {(row("rmsnorm").code - row("baseline").code).toFixed(4)} bits per byte from the baseline. The baseline alone moves {row("baseline").codeSpread} across three seeds, so the difference is about 30 times smaller than the noise.
-- On prose the difference is {(row("rmsnorm").prose - row("baseline").prose).toFixed(4)}, also far inside the noise.
+- On prose the difference is {(row("rmsnorm").prose - row("baseline").prose).toFixed(4)}, also way inside the noise.
 - It saves {(row("baseline").parameters - row("rmsnorm").parameters).toLocaleString("en-US")} parameters, one bias vector of 256 in each of 9 norms.
-- It is {pct(row("rmsnorm").secondsPerStep, row("baseline").secondsPerStep)} percent slower per step.
+- It's {pct(row("rmsnorm").secondsPerStep, row("baseline").secondsPerStep)} percent slower per step.
 
-The slowdown is the opposite of the paper's result, and the note explains it. PyTorch's `LayerNorm` is one fused GPU kernel. octlm's RMSNorm is a chain of separate tensor operations (square, mean, reciprocal square root, two multiplies), and each one reads and writes the whole activation. At width 256 the norm is a noticeable share of each block, so the extra memory traffic shows. The paper counts arithmetic saved. The measurement counts which kernels the framework provides. Both are true, and the second one decides what a config should use.
+The slowdown is the opposite of the paper's result, and the note explains why. PyTorch's `LayerNorm` is one fused GPU kernel. octlm's RMSNorm is a chain of separate tensor ops (square, mean, reciprocal square root, two multiplies), and each one reads and writes the whole activation. At width 256 the norm is a noticeable share of each block, so the extra memory traffic shows up. The paper counts arithmetic saved, the measurement counts which kernels the framework gives you. Both are true, but it's the second one that decides what a config should use.
 
-Decision: no standalone keep. RMSNorm rides inside the `modern` stack, the combination Day 4 trains, where it matches the Qwen architecture Day 6 has to load. Re-measure its speed at width 512 and above before calling the slowdown general.
+Decision, no standalone keep. RMSNorm rides inside the `modern` stack, the combination Day 4 trains, where it matches the Qwen architecture Day 6 has to load. Re-measure its speed at width 512 and above before calling the slowdown general.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **A fused RMSNorm kernel.** Recent PyTorch releases ship `torch.nn.RMSNorm`, and `torch.compile` can fuse the plain version. Either would need its own speed measurement, and at this model size the norm's speed decides nothing.
+- **A fused RMSNorm kernel.** Recent PyTorch releases ship `torch.nn.RMSNorm`, and `torch.compile` can fuse the plain version. Either would need its own speed measurement, and at this model size the norm's speed doesn't decide anything.
 - **The bias variant.** Recorded as untested.
 
 <Callout hue="gray" title="Sources">
-  <p>Zhang and Sennrich, <a href="https://arxiv.org/abs/1910.07467">Root Mean Square Layer Normalization</a>, for the definition, the invariance argument and the reported speedups. Touvron et al., <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, for the gain-only form. The grid numbers are parsed from the variant-grid table in <code>notes/day2.md</code>, because the grid's JSONL did not come back from the Colab VM.</p>
+  <p>Zhang and Sennrich, <a href="https://arxiv.org/abs/1910.07467">Root Mean Square Layer Normalization</a>, for the definition, the invariance argument and the reported speedups. Touvron et al., <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, for the gain-only form. The grid numbers are parsed from the variant-grid table in <code>notes/day2.md</code>, because the grid's JSONL didn't come back from the Colab VM.</p>
 </Callout>

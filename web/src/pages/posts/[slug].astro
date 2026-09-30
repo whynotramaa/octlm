@@ -28,13 +28,18 @@ const hue = dayHue(day);
       <p class="lede">{description}</p>
       <div class="chips">
         {draft && <Chip hue="blue">Draft</Chip>}
-        {!measured && <Chip hue="orange">Not measured</Chip>}
+        {!measured && <Chip hue={day === 3 ? "purple" : "orange"}>{day === 3 ? "Plan switched" : "Result pending"}</Chip>}
         {exps.map((id) => <Chip hue={hue} href="/roadmap/">{id}</Chip>)}
       </div>
     </header>
-    {!measured && (
-      <Callout hue="orange" title="Built and tested, never trained">
-        <p>This code exists in octlm behind a flag that defaults off, and its unit tests pass. The plan changed before any GPU run, so this post has no training result. The playgrounds run the same logic as the Python code. <a href="/posts/why-the-plan-changed/">Why the plan changed</a>.</p>
+    {!measured && day === 3 && (
+      <Callout hue="purple" title="Why the plan switched">
+        <p>Day 2's 3.3M-parameter models saw only 819,200 tokens each. The planned Day 3 runs would still have been too short to separate most architecture effects from seed noise. We kept the tested implementations, trained a larger TinyStories model on Day 4, and moved tool-use work to an instruction-following checkpoint. This experiment's GPU comparison was withdrawn; some ideas moved to Day 5. <a href="/posts/why-the-plan-changed/">Read the numbers and the full decision</a>.</p>
+      </Callout>
+    )}
+    {!measured && day !== 3 && (
+      <Callout hue="orange" title="Trained result pending">
+        <p>The planned trained-model measurement has no accepted result yet. The post distinguishes implemented code, local checks and any earlier measured baseline.</p>
       </Callout>
     )}
     {draft && (

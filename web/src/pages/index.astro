@@ -25,8 +25,8 @@ const title = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
       </h1>
       <p class="lede">
         octlm is a decoder written from scratch in PyTorch. These posts explain each piece: what it does, how we built it,
-        what it measured, and what we chose not to build. Every playground runs the same logic as the Python code, and
-        tests check them against each other.
+        what it measured, and what we chose not to build. Playgrounds let you test the ideas; tests compare model-math
+        playgrounds with the Python code.
       </p>
       <div class="actions">
         <a class="primary" href={`/posts/${posts[0].id}/`}>
@@ -54,7 +54,7 @@ const title = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
                 </span>
                 <span class="post-meta">
                   {post.data.draft && <Chip hue="blue">Draft</Chip>}
-                  {!post.data.measured && <Chip hue="orange">Not measured</Chip>}
+                  {!post.data.measured && <Chip hue={day.day === 3 ? "purple" : "orange"}>{day.day === 3 ? "Plan switched" : "Result pending"}</Chip>}
                   {post.data.exps.length > 0 && <span class="exps">{post.data.exps.join(" · ")}</span>}
                 </span>
                 <svg class="go" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4.5L15.5 10 11 14.5" /></svg>

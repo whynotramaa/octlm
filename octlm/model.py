@@ -37,10 +37,15 @@ class DecoderConfig:
     kv_compress_block: int = 0
     mla_rank: int = 0
     mla_rope_dim: int = 0
+    head_dim: int = 0
+    ff_hidden: int = 0
+    rope_base: float = ROPE_BASE
+    rope_split: bool = False
+    qk_norm: bool = False
 
     @property
     def head_size(self) -> int:
-        return self.d_model // self.n_heads
+        return self.head_dim or self.d_model // self.n_heads
 
     @property
     def key_value_heads(self) -> int:
@@ -49,6 +54,8 @@ class DecoderConfig:
     @property
     def hidden_size(self) -> int:
         """SwiGLU spends three matrices instead of two, so 2/3 holds the parameter count."""
+        if self.ff_hidden:
+            return self.ff_hidden
         full = self.d_model * self.ff_multiplier
         if self.feed_forward == "gelu":
             return full
@@ -69,9 +76,20 @@ class DecoderConfig:
         return window + (length - window) // self.kv_compress_block
 
     def validate(self) -> None:
-        if min(self.vocab_size, self.context_length, self.d_model, self.n_heads, self.n_layers) < 1:
+        if (
+            min(
+                self.vocab_size,
+                self.context_length,
+                self.d_model,
+                self.n_heads,
+                self.n_layers,
+                self.head_dim + 1,
+                self.ff_hidden + 1,
+            )
+            < 1
+        ):
             raise ValueError("model dimensions must be positive")
-        if self.d_model % self.n_heads:
+        if not self.head_dim and self.d_model % self.n_heads:
             raise ValueError("d_model must be divisible by n_heads")
         if self.ff_multiplier < 1 or not 0 <= self.dropout < 1:
             raise ValueError("ff_multiplier and dropout are invalid")
@@ -90,6 +108,8 @@ class DecoderConfig:
             raise ValueError("RoPE needs an even head size")
         if self.rope_scale <= 0:
             raise ValueError("rope_scale must be positive")
+        if not math.isfinite(self.rope_base) or self.rope_base <= 0:
+            raise ValueError("rope_base must be finite and positive")
         self._validate_day3()
 
     def _validate_day3(self) -> None:
@@ -158,17 +178,22 @@ def sinusoidal_positions(length: int, width: int, device: torch.device) -> Tenso
 
 
 def rope_tables(
-    length: int, head_size: int, scale: float, device: torch.device
+    length: int, head_size: int, scale: float, device: torch.device, base: float = ROPE_BASE
 ) -> tuple[Tensor, Tensor]:
     index = torch.arange(0, head_size, 2, device=device, dtype=torch.float32)
-    inverse_frequency = 1.0 / torch.pow(ROPE_BASE, index / head_size)
+    inverse_frequency = 1.0 / torch.pow(base, index / head_size)
     position = torch.arange(length, device=device, dtype=torch.float32) / scale
     angle = torch.outer(position, inverse_frequency)
     return angle.cos(), angle.sin()
 
 
-def apply_rope(x: Tensor, cosine: Tensor, sine: Tensor) -> Tensor:
+def apply_rope(x: Tensor, cosine: Tensor, sine: Tensor, split: bool = False) -> Tensor:
     """Rotate each adjacent channel pair of [batch, heads, length, head_size] by its angle."""
+    if split:
+        cosine = torch.cat((cosine, cosine), -1).to(x.dtype)
+        sine = torch.cat((sine, sine), -1).to(x.dtype)
+        left, right = x.chunk(2, -1)
+        return x * cosine + torch.cat((-right, left), -1) * sine
     pairs = x.float().unflatten(-1, (-1, 2))
     left, right = pairs[..., 0], pairs[..., 1]
     rotated = torch.stack((left * cosine - right * sine, left * sine + right * cosine), dim=-1)
@@ -213,7 +238,10 @@ class CausalSelfAttention(nn.Module):
         self.n_heads = config.n_heads
         self.kv_heads = config.n_heads if config.attention == "mla" else config.key_value_heads
         self.head_size = config.head_size
-        self.query = nn.Linear(config.d_model, config.d_model, bias=False)
+        query_width = self.n_heads * self.head_size
+        self.query = nn.Linear(config.d_model, query_width, bias=False)
+        self.query_norm = RMSNorm(self.head_size) if config.qk_norm else nn.Identity()
+        self.key_norm = RMSNorm(self.head_size) if config.qk_norm else nn.Identity()
         if config.attention == "mla":
             self.kv_down = nn.Linear(config.d_model, config.mla_rank, bias=False)
             self.kv_up = nn.Linear(config.mla_rank, 2 * config.d_model, bias=False)
@@ -225,11 +253,12 @@ class CausalSelfAttention(nn.Module):
             width = self.kv_heads * self.head_size
             self.key = nn.Linear(config.d_model, width, bias=False)
             self.value = nn.Linear(config.d_model, width, bias=False)
-        self.output = nn.Linear(config.d_model, config.d_model, bias=False)
+        self.output = nn.Linear(query_width, config.d_model, bias=False)
         self.dropout = nn.Dropout(config.dropout)
-        mask = attention_mask(
-            config.context_length, config.attention_window, config.attention_stride
+        mask_length = (
+            config.context_length if config.attention == "naive" or config.attention_window else 1
         )
+        mask = attention_mask(mask_length, config.attention_window, config.attention_stride)
         self.register_buffer("causal_mask", mask, persistent=False)
 
     def causal_mask_for(self, length: int) -> Tensor:
@@ -250,13 +279,14 @@ class CausalSelfAttention(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor]:
         if self.config.attention == "mla":
             return self._project_mla(x, rope)
-        query = self._heads(self.query(x), self.n_heads, self.head_size)
-        key = self._heads(self.key(x), self.kv_heads, self.head_size)
+        query = self.query_norm(self._heads(self.query(x), self.n_heads, self.head_size))
+        key = self.key_norm(self._heads(self.key(x), self.kv_heads, self.head_size))
         value = self._heads(self.value(x), self.kv_heads, self.head_size)
         if self.config.kv_compress_block:
             return self._compress(query, key, value, rope)
         if rope is not None:
-            query, key = apply_rope(query, *rope), apply_rope(key, *rope)
+            query = apply_rope(query, *rope, split=self.config.rope_split)
+            key = apply_rope(key, *rope, split=self.config.rope_split)
         return query, key, value
 
     def _project_mla(
@@ -310,7 +340,7 @@ class CausalSelfAttention(nn.Module):
         return None
 
     def forward(self, x: Tensor, rope: tuple[Tensor, Tensor] | None = None) -> Tensor:
-        batch, length, width = x.shape
+        batch, length, _ = x.shape
         query, key, value = self._project(x, rope)
         mask = self._mask_for(length, x.device)
         if self.config.attention == "naive":
@@ -330,8 +360,36 @@ class CausalSelfAttention(nn.Module):
                 dropout_p=self.dropout.p if self.training else 0.0,
                 enable_gqa=key.shape[1] != self.n_heads,
             )
-        attended = attended.transpose(1, 2).contiguous().view(batch, length, width)
+        attended = attended.transpose(1, 2).contiguous().view(batch, length, -1)
         return self.output(attended)
+
+    def forward_cached(
+        self,
+        x: Tensor,
+        rope: tuple[Tensor, Tensor] | None,
+        cache: tuple[Tensor, Tensor] | None,
+    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
+        batch, length, _ = x.shape
+        query, key, value = self._project(x, rope)
+        past = 0 if cache is None else cache[0].shape[2]
+        if cache is not None:
+            key = torch.cat((cache[0], key), dim=2)
+            value = torch.cat((cache[1], value), dim=2)
+        mask = None
+        if past and length > 1:
+            rows = torch.arange(past, past + length, device=x.device).unsqueeze(1)
+            columns = torch.arange(past + length, device=x.device).unsqueeze(0)
+            mask = columns <= rows
+        attended = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=mask,
+            is_causal=not past and length > 1,
+            enable_gqa=key.shape[1] != self.n_heads,
+        )
+        attended = attended.transpose(1, 2).contiguous().view(batch, length, -1)
+        return self.output(attended), (key, value)
 
 
 class FeedForward(nn.Module):
@@ -366,6 +424,20 @@ class TransformerBlock(nn.Module):
         x = self.attention_norm(x + self.attention(x, rope))
         return self.feed_forward_norm(x + self.feed_forward(x))
 
+    def forward_cached(
+        self,
+        x: Tensor,
+        rope: tuple[Tensor, Tensor] | None,
+        cache: tuple[Tensor, Tensor] | None,
+    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
+        if self.pre_norm:
+            attended, updated = self.attention.forward_cached(self.attention_norm(x), rope, cache)
+            x = x + attended
+            return x + self.feed_forward(self.feed_forward_norm(x)), updated
+        attended, updated = self.attention.forward_cached(x, rope, cache)
+        x = self.attention_norm(x + attended)
+        return self.feed_forward_norm(x + self.feed_forward(x)), updated
+
 
 class Decoder(nn.Module):
     def __init__(self, config: DecoderConfig) -> None:
@@ -398,13 +470,15 @@ class Decoder(nn.Module):
         if isinstance(module, nn.Linear) and module.bias is not None:
             nn.init.zeros_(module.bias)
 
-    def _embed(self, token_ids: Tensor) -> Tensor:
+    def _embed(self, token_ids: Tensor, offset: int = 0) -> Tensor:
         x = self.token_embedding(token_ids)
         if self.position_embedding is not None:
-            positions = torch.arange(token_ids.shape[1], device=token_ids.device)
+            positions = torch.arange(offset, offset + token_ids.shape[1], device=token_ids.device)
             return x + self.position_embedding(positions)
         if self.config.position == "sinusoidal":
-            table = sinusoidal_positions(token_ids.shape[1], self.config.d_model, token_ids.device)
+            table = sinusoidal_positions(
+                offset + token_ids.shape[1], self.config.d_model, token_ids.device
+            )[offset:]
             return x + table
         return x
 
@@ -417,7 +491,11 @@ class Decoder(nn.Module):
         rope = None
         if self.config.position == "rope":
             rope = rope_tables(
-                length, self.config.head_size, self.config.rope_scale, token_ids.device
+                length,
+                self.config.head_size,
+                self.config.rope_scale,
+                token_ids.device,
+                self.config.rope_base,
             )
         x = self.dropout(self._embed(token_ids))
         for block in self.blocks:
@@ -427,6 +505,69 @@ class Decoder(nn.Module):
         if not all_depths:
             return logits
         return torch.stack([logits, *(self.lm_head(a(hidden)) for a in self.mtp_adapters)])
+
+    @torch.inference_mode()
+    def forward_cached(
+        self, token_ids: Tensor, cache: list[tuple[Tensor, Tensor]] | None = None
+    ) -> tuple[Tensor, list[tuple[Tensor, Tensor]]]:
+        if self.training:
+            raise ValueError("cached forward requires eval mode")
+        if (
+            self.config.attention != "sdpa"
+            or self.config.attention_window
+            or self.config.kv_compress_block
+        ):
+            raise ValueError("cached forward requires full SDPA attention")
+        if token_ids.ndim != 2 or token_ids.shape[1] < 1:
+            raise ValueError("token IDs must have shape [batch, nonempty sequence]")
+        if cache is not None and len(cache) != len(self.blocks):
+            raise ValueError("cache must have one entry per layer")
+        past = 0 if cache is None else cache[0][0].shape[2]
+        if past + token_ids.shape[1] > self.config.context_length:
+            raise ValueError("cached sequence exceeds context_length")
+        rope = None
+        if self.config.position == "rope":
+            cosine, sine = rope_tables(
+                past + token_ids.shape[1],
+                self.config.head_size,
+                self.config.rope_scale,
+                token_ids.device,
+                self.config.rope_base,
+            )
+            rope = cosine[past:], sine[past:]
+        x = self.dropout(self._embed(token_ids, past))
+        updated = []
+        for index, block in enumerate(self.blocks):
+            x, layer_cache = block.forward_cached(x, rope, None if cache is None else cache[index])
+            updated.append(layer_cache)
+        return self.lm_head(self.final_norm(x)), updated
+
+    @torch.inference_mode()
+    def generate_cached(
+        self,
+        token_ids: Tensor,
+        max_new_tokens: int,
+        temperature: float = 0.0,
+        top_k: int = 0,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
+        if token_ids.ndim != 2 or token_ids.shape[0] != 1 or token_ids.shape[1] < 1:
+            raise ValueError("generation accepts one nonempty sequence")
+        if max_new_tokens < 0 or temperature < 0 or top_k < 0:
+            raise ValueError("generation counts, temperature, and top_k must not be negative")
+        if max_new_tokens == 0:
+            return token_ids
+        logits, cache = self.forward_cached(token_ids[:, -self.config.context_length :])
+        for step in range(max_new_tokens):
+            next_token = sample_token(logits[:, -1].float(), temperature, top_k, generator)
+            token_ids = torch.cat((token_ids, next_token), dim=1)
+            if step + 1 == max_new_tokens:
+                break
+            if cache[0][0].shape[2] == self.config.context_length:
+                logits, cache = self.forward_cached(token_ids[:, -self.config.context_length :])
+            else:
+                logits, cache = self.forward_cached(next_token, cache)
+        return token_ids
 
     @torch.inference_mode()
     def generate(

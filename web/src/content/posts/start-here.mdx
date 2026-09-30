@@ -1,6 +1,6 @@
 ---
 title: What octlm is, and how it measures
-description: "The goal, the rules every experiment follows, the laptop it started on, and the first two experiments, which built the lab before any model existed."
+description: "What we are building, the rules every experiment follows, the laptop it started on, and the first two experiments, which built the lab before there was even a model."
 day: 0
 order: 1
 exps: ["EXP-001", "EXP-002"]
@@ -18,19 +18,19 @@ import Flow from "../../widgets/Flow.tsx";
 export const bench = [[128, 4.0], [256, 6.6], [512, 15.3], [1024, 28.7], [2048, 115.2]];
 export const presets = [{ name: "EXP-002 bench", config: { ...modelConfig("day1"), vocab_size: 512, context_length: 2048 } }, { name: "Day 1", config: modelConfig("day1") }];
 export const loop = [
-  { name: "Problem", detail: "One sentence on what is wrong or unknown. EXP-002 asked how long a sequence the laptop can run before memory or time runs out." },
-  { name: "Research", detail: "Papers, official reports and source code, named in the day's note with the claim each supports and the decision it caused. An announcement is a lead, not a fact." },
-  { name: "Hypothesis", detail: "What we expect, stated so a number can prove it false. Several hypotheses in this series were written in the negative on purpose." },
-  { name: "Baseline", detail: "The thing it is compared against, measured the same way on the same machine. No baseline, no claim." },
-  { name: "Stop condition", detail: "Written before the run: when to give up, and which numbers decide it. It stops a run from drifting into a search for a good result." },
-  { name: "Run", detail: "One change at a time. Every run writes JSONL records under runs/, so a chart on this site can be regenerated from the file." },
-  { name: "Result", detail: "The numbers, the failures, and what surprised us, written into the note while the work happens, not reconstructed after." },
-  { name: "Keep or revert", detail: "A decision with a reason. A kept change becomes the next baseline. A reverted one stays in the note with its numbers." },
+  { name: "Problem", detail: "One sentence on what is wrong or what we don't know. EXP-002 asked how long a sequence the laptop can run before memory or time runs out." },
+  { name: "Research", detail: "Papers, official reports and source code, named in the day's note with the claim each one supports and the decision it caused. An announcement is a lead, not a fact." },
+  { name: "Hypothesis", detail: "What we expect, written so a number can prove it wrong. A few hypotheses here were written in the negative on purpose." },
+  { name: "Baseline", detail: "The thing we compare against, measured the same way on the same machine. No baseline, no claim." },
+  { name: "Stop condition", detail: "Written before the run, when to give up and which numbers decide it. Otherwise a run slowly turns into hunting for a good-looking result." },
+  { name: "Run", detail: "One change at a time. Every run writes JSONL records under runs/, so any chart on this site can be rebuilt from the file." },
+  { name: "Result", detail: "The numbers, the failures and what surprised us, written into the note while the work happens, not pieced together after." },
+  { name: "Keep or revert", detail: "A decision with a reason. A kept change becomes the next baseline, a reverted one stays in the note with its numbers." },
 ];
 
-octlm is a small decoder language model written from scratch in PyTorch. It exists to learn how a language model works, down to the arithmetic, and to be able to defend each piece with a number that came from running it.
+octlm is a small decoder language model that I'm writing from scratch in PyTorch. The whole point is to actually learn how a language model works, like down to the arithmetic, and to be able to defend every piece of it with a number that came from running it, not from a blog post.
 
-This series follows the build in the order it happened. Day 0 is this post and the next one. They cover what the project is, how it measures, and what a language model is even trying to do. Day 1 builds the first working model. Day 2 replaces its parts with the ones current open models use. Day 3 builds four research ideas and then stops. Day 4 trains the model for real.
+This series follows the build in the order it happened. Day 0 is this post and the next one, so what the project is, how it measures things, and what a language model is even trying to do. Day 1 builds the first working model. Day 2 swaps its parts for the ones current open models use. Day 3 builds four research ideas and then stops. Day 4 trains the model for real.
 
 <Label>The goal</Label>
 
@@ -38,32 +38,32 @@ This series follows the build in the order it happened. Day 0 is this post and t
 
 The plan has three stages.
 
-1. Write a decoder from scratch, about 20 million parameters, and train it on children's stories until it writes coherent ones.
-2. Load Qwen, a real open model, into the same code and check that it produces the same logits as the reference implementation.
-3. Fine-tune Qwen with LoRA, written in octlm, to emit tool calls, and build a harness that runs it against a fixed set of tasks.
+1. Write a decoder from scratch, around 20 million parameters, and train it on children's stories until it writes coherent ones.
+2. Load Qwen, a real open model, into the same code and check that it gives the same logits as the reference implementation.
+3. Fine-tune Qwen with LoRA, written inside octlm, so it emits tool calls, and build a harness that runs it against a fixed set of tasks.
 
-The first stage proves the internals. The second proves they are the same internals a production model uses. The third produces something measurable on top of them. The plan used to be bigger, and [why the plan changed](/posts/why-the-plan-changed/) covers what was cut and why.
+The first stage proves the internals. The second proves they're the same internals a production model uses. The third gives us something we can measure on top of them. The plan used to be way bigger, and [why the plan changed](/posts/why-the-plan-changed/) covers what got cut and why.
 
 <Label>The method</Label>
 
-## Every experiment is written down before it runs
+## Every experiment gets written down before it runs
 
-Each experiment gets an ID, EXP-001 onward, and a section in the day's note with the same five parts:
+Each experiment gets an ID, EXP-001 onward, and a section in that day's note with the same five parts:
 
-- **Problem.** One sentence on what is wrong or unknown.
-- **Hypothesis.** What we expect, stated so a result can prove it false.
-- **Baseline.** The thing it is compared against, measured the same way.
+- **Problem.** One sentence on what's wrong or what we don't know.
+- **Hypothesis.** What we expect, written so a result can prove it wrong.
+- **Baseline.** The thing we compare against, measured the same way.
 - **Measurement.** The exact numbers that will decide it.
-- **Stop condition.** When to give up or change course.
+- **Stop condition.** When to give up or change direction.
 
-After the run, the section records the result, what failed, and a keep or revert decision. Failed ideas stay in the note with their numbers. Several posts in this series are about things that did not work, and those are the ones that taught the most.
+After the run the section records the result, what failed, and a keep or revert decision. Failed ideas stay in the note with their numbers. A bunch of posts in this series are about things that didn't work, and honestly those taught me the most.
 
-Two more rules shape everything:
+Two more rules shape basically everything:
 
-- **Change one thing per comparison.** If two parts change at once, a better number cannot be credited to either.
-- **No optimization claim without a baseline.** "Faster" means a measured time against a measured time on the same machine.
+- **Change one thing per comparison.** If two parts change at once and the number gets better, you can't credit either of them.
+- **No optimization claim without a baseline.** "Faster" means a measured time against a measured time on the same machine, nothing else.
 
-<Figure label="Diagram" caption="The life of one experiment. Click a stage, or step through. The loop closes when a decision becomes the baseline of the next experiment.">
+<Figure label="Diagram" caption="The life of one experiment. Click a stage or step through it. The loop closes when a decision becomes the baseline for the next experiment.">
   <Flow client:visible loop stages={loop} />
 </Figure>
 
@@ -71,12 +71,12 @@ Two more rules shape everything:
 
 ## A lab that can repeat its own results
 
-Before any model, the repository needed to produce the same numbers twice. EXP-001 set that up:
+Before any model, the repo had to be able to produce the same numbers twice. EXP-001 set that up:
 
-- Python 3.14 and PyTorch 2.14 for CPU, pinned with `uv.lock`, so a fresh checkout installs the same versions.
-- One TOML file per day holds every setting that varies. A SHA-256 of the settings becomes the config fingerprint, and a checkpoint refuses to resume under a different fingerprint.
-- A dry run builds the model and prints its parameter count and output shape without training. For the Day 1 config it reports 541,952 parameters and logits shaped `[1, 128, 1024]`, meaning one sequence, 128 positions, a score for each of 1,024 vocabulary entries.
-- Every measurement is one JSON line in `runs/`. The charts on this site read those files, and a test fails the site build if a file is malformed.
+- Python 3.14 and PyTorch 2.14 for CPU, pinned with `uv.lock`, so a fresh checkout installs the exact same versions.
+- One TOML file per day holds every setting that varies. A SHA-256 of those settings becomes the config fingerprint, and a checkpoint refuses to resume under a different fingerprint.
+- A dry run builds the model and prints the parameter count and output shape without training. For the Day 1 config it reports 541,952 parameters and logits shaped `[1, 128, 1024]`, so one sequence, 128 positions, and a score for each of 1,024 vocabulary entries.
+- Every measurement is one JSON line in `runs/`. The charts on this site read those files, and a test fails the site build if a file is broken.
 
 The parameter count is simple enough to do by hand, and the counter below does the same sums octlm does. A test checks it against `parameter_count` on the real PyTorch model for five configs.
 
@@ -84,48 +84,48 @@ The parameter count is simple enough to do by hand, and the counter below does t
   <ParameterCounter client:visible presets={presets} start={1} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- The token embedding is the largest single part at Day 1 size, 1,024 entries of 128 numbers. The output head reuses the same matrix, so it adds nothing. [The baseline block](/posts/baseline-block/) explains why.
+- The token embedding is the biggest single part at Day 1 size, 1,024 entries of 128 numbers. The output head reuses the same matrix, so it adds nothing. [The baseline block](/posts/baseline-block/) explains why.
 - Each layer costs the same, so doubling the layers roughly doubles everything except the embedding.
-- Switch positions to RoPE and the position table disappears. RoPE has no parameters.
+- Switch positions to RoPE and the position table just disappears, RoPE has no parameters.
 
 <Label>EXP-002</Label>
 
-## How far can a laptop go?
+## How far can a laptop go ?
 
-The machine is an Intel i5-12450H with 12 logical CPUs, 15 GiB of RAM, and no usable GPU. EXP-002 asked at which context length a single forward pass of the Day 1 model shape stops being practical on this CPU.
+The machine is an Intel i5-12450H with 12 logical CPUs, 15 GiB of RAM and no usable GPU. EXP-002 asked, at which context length does a single forward pass of the Day 1 model shape stop being practical on this CPU ?
 
 `octlm.bench` builds the model at each length, runs one untrained forward pass on a sequence of zeros, and records the time and the process's peak memory.
 
 <Source file="octlm/bench.py" symbol="measure" />
 
-<Figure label="Measured" caption="One forward pass at batch 1, float32, CPU. Five points from one run, recorded in notes/day1.md. There is no runs/ file for EXP-002, so these numbers come from the note.">
+<Figure label="Measured" caption="One forward pass at batch 1, float32, CPU. Five points from one run, recorded in notes/day1.md. There's no runs/ file for EXP-002, so these numbers come from the note.">
   <LineChart client:visible series={[{ name: "forward pass", points: bench }]} x={{ label: "context length (tokens)", log: true }} y={{ label: "milliseconds" , format: "fixed1"}} markers height={280} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - From 128 to 1,024 tokens the time grows about as fast as the length. The feed-forward layers and projections cost the same per token, and at these lengths they dominate.
-- From 1,024 to 2,048 the time quadruples, from 28.7 ms to 115.2 ms. Attention compares every position with every earlier one, so its cost grows with the square of the length, and at 2,048 it starts to show. [Causal attention](/posts/causal-attention/) and [SDPA](/posts/sdpa-and-flashattention/) come back to this square.
-- Peak memory reached 504 MB by the end of the process.
+- From 1,024 to 2,048 the time goes 4x, from 28.7 ms to 115.2 ms. Attention compares every position with every earlier one, so its cost grows with the square of the length, and at 2,048 you start to see it. [Causal attention](/posts/causal-attention/) and [SDPA](/posts/sdpa-and-flashattention/) come back to this square.
+- Peak memory hit 504 MB by the end of the process.
 
-These are smoke measurements from one run, and the note says so. They set 2,048 as the longest context Day 1 would claim to support, and nothing more.
+These are smoke measurements from one run, and the note says that. They set 2,048 as the longest context Day 1 would claim to support, and nothing more than that.
 
 <Label>A later constraint</Label>
 
 ## Training moved off the laptop
 
-Day 2 ran a grid of 24 training runs. Saturating every core for most of an hour overheated the laptop, so from Day 2 onward all training runs on a cloud T4 GPU, first on Colab and from Day 4 on Kaggle. The laptop keeps the short checks: the unit tests, a dry run, and measurements that do not need a GPU. Every result on this site names the machine it ran on.
+Day 2 ran a grid of 24 training runs. Maxing out every core for most of an hour overheated the laptop, like actually overheated, so from Day 2 onward all training runs on a cloud T4 GPU, first on Colab and from Day 4 on Kaggle. The laptop keeps the short stuff, the unit tests, a dry run, and measurements that don't need a GPU. Every result on this site names the machine it ran on.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **A configuration framework.** One TOML file per day and a frozen dataclass cover every setting. A framework would add code without adding a setting.
-- **Plots in the Python code.** octlm writes JSON lines. This site draws them.
-- **A GPU from day one.** Day 1 models trained in seconds on the CPU. The GPU arrived when a measured run made the laptop overheat.
+- **A configuration framework.** One TOML file per day and a frozen dataclass cover every setting. A framework would add code without adding a single setting.
+- **Plots in the Python code.** octlm writes JSON lines, this site draws them.
+- **A GPU from day one.** Day 1 models trained in seconds on the CPU. The GPU came in only when a measured run made the laptop overheat.
 
 <Callout hue="gray" title="Sources">
-  <p>The goal and the stage list come from <code>PLAN.md</code>. The method comes from <code>AGENTS.md</code>. EXP-001, EXP-002 and the machine details come from <code>notes/day1.md</code>. The move to a GPU comes from the operating-constraint section of <code>notes/day2.md</code>. PyTorch's <a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">reproducibility note</a> sets the limit on "the same numbers twice": one release, one platform, one device.</p>
+  <p>The goal and the stage list come from <code>PLAN.md</code>. The method comes from <code>AGENTS.md</code>. EXP-001, EXP-002 and the machine details come from <code>notes/day1.md</code>. The move to a GPU comes from the operating-constraint section of <code>notes/day2.md</code>. PyTorch's <a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">reproducibility note</a> sets the limit on "the same numbers twice", one release, one platform, one device.</p>
 </Callout>

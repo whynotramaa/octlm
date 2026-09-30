@@ -7,12 +7,13 @@ import torch
 
 from octlm.config import ProjectConfig
 from octlm.day2 import VARIANTS, tiled_attention
+from octlm.day5 import Int8Linear, spread
 from octlm.model import (
     CausalSelfAttention,
+    Decoder,
     DecoderConfig,
     apply_rope,
     attention_mask,
-    Decoder,
     compressed_mask,
     kv_cache_bytes,
     mask_density,
@@ -73,6 +74,9 @@ def export_runs() -> None:
         export_jsonl(source, source.stem)
     for source in sorted((ROOT / "runs/kaggle-day4/day4").rglob("*.jsonl")):
         export_jsonl(source, f"day4-{source.stem}")
+    for name in ("inference", "spread", "mtp"):
+        for source in sorted((ROOT / f"runs/kaggle-day5-{name}/day5").glob("*.jsonl")):
+            export_jsonl(source, source.stem)
 
 
 def tokenizer_fixture() -> dict:
@@ -195,7 +199,9 @@ def cache_fixture() -> list[dict]:
     for shape in shapes:
         config = DecoderConfig(vocab_size=16, **shape)
         for length in (1024, 4096):
-            rows.append({"config": shape, "length": length, "bytes": kv_cache_bytes(config, length)})
+            rows.append(
+                {"config": shape, "length": length, "bytes": kv_cache_bytes(config, length)}
+            )
     return rows
 
 
@@ -204,7 +210,9 @@ def training_fixture() -> dict:
     for name in ("day1", "day4"):
         config = ProjectConfig.load(ROOT / "configs" / f"{name}.toml")
         settings = config.training
-        steps = sorted({0, 1, settings.warmup_steps - 1, settings.warmup_steps, settings.steps // 2})
+        steps = sorted(
+            {0, 1, settings.warmup_steps - 1, settings.warmup_steps, settings.steps // 2}
+        )
         steps += [settings.steps - 1, settings.steps, settings.steps + 10]
         schedules[name] = {
             "learning_rate": settings.learning_rate,
@@ -217,9 +225,7 @@ def training_fixture() -> dict:
         {"d_model": width, "ff_multiplier": 4, "feed_forward": kind, "hidden_size": hidden}
         for width in (256, 512)
         for kind in ("gelu", "swiglu")
-        for hidden in [
-            DecoderConfig(vocab_size=16, d_model=width, feed_forward=kind).hidden_size
-        ]
+        for hidden in [DecoderConfig(vocab_size=16, d_model=width, feed_forward=kind).hidden_size]
     ]
     return {"schedules": schedules, "hidden_size": feed_forward}
 
@@ -268,6 +274,21 @@ def floats_fixture() -> list[dict]:
     ]
 
 
+def day5_fixture() -> dict:
+    weights = [-0.8, -0.35, 0.0, 0.32, 1.0]
+    linear = torch.nn.Linear(len(weights), 1, bias=False)
+    with torch.no_grad():
+        linear.weight.copy_(torch.tensor([weights]))
+    quantized = Int8Linear(linear)
+    rows = [{"variant": "baseline", "bits_per_byte": value} for value in (0.48, 0.5, 0.52)]
+    return {
+        "spread": spread(rows, "baseline"),
+        "weights": weights,
+        "scale": quantized.scale.item(),
+        "codes": quantized.qweight[0].tolist(),
+    }
+
+
 def main() -> None:
     export_runs()
     fixtures = WEB / "fixtures"
@@ -281,6 +302,7 @@ def main() -> None:
     write(fixtures / "sampling.json", sampling_fixture())
     write(fixtures / "parameters.json", parameters_fixture())
     write(fixtures / "floats.json", floats_fixture())
+    write(fixtures / "day5.json", day5_fixture())
 
 
 if __name__ == "__main__":

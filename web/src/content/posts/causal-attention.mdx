@@ -18,39 +18,39 @@ import AttentionShapes from "../../widgets/AttentionShapes.tsx";
 export const math = (length) => sdpa.find((r) => r.length === length && r.dtype === "float32" && r.backend === "math");
 export const mib = (bytes) => Math.round(bytes / 2 ** 20).toLocaleString("en-US");
 
-A language model reads a sequence of tokens and predicts the next one at every position. Most of the layers in a decoder work on one position at a time. The feed-forward layer, the norms and the output head each see a single vector and nothing else.
+A language model reads a sequence of tokens and predicts the next one at every position. Most layers in a decoder work on one position at a time, the feed-forward layer, the norms and the output head each see a single vector and nothing else.
 
-Attention is the only layer where positions exchange information. If the model is to predict what follows "The cat sat because it", the vector at "it" has to learn something about "cat". Attention is how it gets there.
+Attention is the only layer where positions actually talk to each other. If the model has to predict what comes after "The cat sat because it", the vector at "it" has to learn something about "cat". Attention is how it gets there.
 
-This post walks through octlm's attention layer from input to output, on a real module with 16-dimensional vectors and two heads. Then it checks the one property a decoder cannot live without.
+This post walks through octlm's attention layer from input to output, on a real module with 16-dimensional vectors and two heads. And then it checks the one property a decoder can't live without.
 
 <Label>The problem</Label>
 
 ## Every position needs to read the positions before it
 
-Older models had two ways to carry context forward. An n-gram model looks at a fixed window, so a word four tokens back is invisible to a 3-gram. A recurrent network squeezes the whole history into one vector that it updates token by token, so distant tokens fade.
+Older models had two ways to carry context forward. An n-gram model looks at a fixed window, so a word four tokens back is invisible to a 3-gram. A recurrent network squeezes the whole history into one vector that it updates token by token, so distant tokens slowly fade out.
 
-Attention does neither. Each position looks at every earlier position directly and decides how much of each to take. The distance between "it" and "cat" does not matter. What matters is whether the model learned that they are related.
+Attention does neither. Each position looks at every earlier position directly and decides how much of each one to take. The distance between "it" and "cat" doesn't matter. What matters is whether the model learned that they're related.
 
 <Label>Intuition</Label>
 
 ## Queries, keys and values
 
-Each position turns its vector into three new vectors with three learned matrices:
+Each position turns its vector into three new vectors using three learned matrices:
 
-- A **query** describes what this position is looking for.
-- A **key** describes what this position can offer to others.
+- A **query** is what this position is looking for.
+- A **key** is what this position can offer to others.
 - A **value** is the information this position passes on if someone reads it.
 
-Position $i$ compares its query with the key of every position it may see. A large dot product means a good match. The matches become weights, and the output at $i$ is the weighted average of the values.
+Position $i$ compares its query with the key of every position it's allowed to see. A big dot product means a good match. The matches become weights, and the output at $i$ is the weighted average of the values.
 
-Step through it below. The numbers are real. `scripts/export.py` builds octlm's `CausalSelfAttention` with `torch.manual_seed(0)`, feeds it random inputs, and saves every weight. The page recomputes each step in TypeScript, and a test checks the final output against PyTorch's.
+Step through it below. The numbers are real, `scripts/export.py` builds octlm's `CausalSelfAttention` with `torch.manual_seed(0)`, feeds it random inputs and saves every weight. The page recomputes each step in TypeScript, and a test checks the final output against PyTorch's.
 
-<Figure label="Playground" caption="Hover a row in the scores, mask or softmax step to highlight what one position reads. Positions t0 to t7 are sequence positions, not words. The inputs are random, so the patterns carry no meaning yet.">
+<Figure label="Playground" caption="Hover a row in the scores, mask or softmax step to highlight what one position reads. Positions t0 to t7 are sequence positions, not words. The inputs are random, so the patterns don't mean anything yet.">
   <AttentionWalk client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - In the **Softmax** step, row t0 has a weight of 1.00 on t0 and nothing else. The first position can only read itself.
 - The top-right triangle is empty from the **Mask** step onward. No position has any weight on a position after it.
@@ -73,7 +73,7 @@ $$
 M_{ij} = \begin{cases} 0 & \text{if } j \le i \\ -\infty & \text{if } j > i \end{cases}
 $$
 
-The division by $\sqrt{d}$ has a concrete reason. If the entries of a query and a key are independent with variance 1, their dot product is a sum of $d$ such products and has variance $d$. At $d = 64$ the scores would have a standard deviation of 8. Softmax over numbers that far apart puts almost all the weight on one position, and its gradient for the others nearly vanishes. Dividing by $\sqrt{d}$ brings the variance back to 1.
+The division by $\sqrt{d}$ has a real reason, it's not decoration. If the entries of a query and a key are independent with variance 1, their dot product is a sum of $d$ such products and has variance $d$. At $d = 64$ the scores would have a standard deviation of 8. Softmax over numbers that far apart puts almost all the weight on one position, and its gradient for the others basically vanishes. Dividing by $\sqrt{d}$ brings the variance back to 1.
 
 The shapes for the playground's input, with batch $B = 1$, length $T = 8$, width $C = 16$ and 2 heads:
 
@@ -91,13 +91,13 @@ The scores are `[T, T]` per head. That square is the cost of attention, and it c
 
 <Label>The mask</Label>
 
-## The mask is what separates reading from cheating
+## The mask is the difference between reading and cheating
 
-Training does not generate one token at a time. It feeds the whole sequence in at once and computes a prediction at every position in parallel. The target at position $i$ is the token at position $i + 1$, and that token is sitting right there in the input.
+Training doesn't generate one token at a time. It feeds the whole sequence in at once and computes a prediction at every position in parallel. The target at position $i$ is the token at position $i + 1$, and that token is sitting right there in the input.
 
-Without the mask, position $i$ could attend to position $i + 1$ and copy the answer. The training loss would fall fast and the model would learn nothing it can use at generation time, when the next token does not exist yet.
+So without the mask, position $i$ could attend to position $i + 1$ and just copy the answer. The training loss would drop fast and the model would learn nothing it can use at generation time, when the next token doesn't exist yet.
 
-So the property to check is exact. Changing the token at position $p$ must leave every output row before $p$ unchanged. The rows must be the same numbers, not merely close. octlm's Day 1 test does this. It changes the last input token and confirms that every earlier logit is byte-identical.
+So the property to check is exact. Changing the token at position $p$ has to leave every output row before $p$ unchanged, and I mean the same numbers, not just close. octlm's Day 1 test does this, it changes the last input token and confirms that every earlier logit is byte-identical.
 
 Try it on the attention layer alone:
 
@@ -105,10 +105,10 @@ Try it on the attention layer alone:
   <CausalCheck client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
-- With the causal mask, every row before the edited position changes by exactly 0. Those rows never read the edited value, so the arithmetic that produces them is the same arithmetic as before.
-- Rows after the edited position do change. They are allowed to read it.
+- With the causal mask, every row before the edited position changes by exactly 0. Those rows never read the edited value, so the arithmetic that makes them is the same arithmetic as before.
+- Rows after the edited position do change, they're allowed to read it.
 - With no mask, every row changes. Position t0 now depends on t7, which in training would be information from the future.
 
 <Label>In octlm</Label>
@@ -119,9 +119,9 @@ The Day 1 attention path is written out by hand so every step is visible. This i
 
 <Source file="octlm/model.py" symbol="CausalSelfAttention._naive" />
 
-`masked_fill(~mask, float("-inf"))` is the $+M$ in the formula. `softmax(dim=-1)` normalizes each row. The `repeat_interleave` branch does nothing on Day 1, where every query head has its own key and value head. It exists for grouped-query attention, which arrived on Day 2.
+`masked_fill(~mask, float("-inf"))` is the $+M$ in the formula. `softmax(dim=-1)` normalizes each row. The `repeat_interleave` branch does nothing on Day 1, where every query head has its own key and value head. It's there for grouped-query attention, which came on Day 2.
 
-The mask comes from one function. Later experiments reuse it to build sliding-window and strided masks:
+The mask comes from one function, and later experiments reuse it to build sliding-window and strided masks:
 
 <Source file="octlm/model.py" symbol="attention_mask" />
 
@@ -129,17 +129,17 @@ The mask comes from one function. Later experiments reuse it to build sliding-wi
 
 ## Why two heads instead of one wide one
 
-Two heads of width 8 use the same parameters as one head of width 16. The difference is in the weights. One head produces one weight row per position, so each position can take one mixture of the others. Two heads produce two independent mixtures. In a trained model, one head might track the previous token while another tracks the subject of the sentence.
+Two heads of width 8 use the same parameters as one head of width 16. The difference is in the weights. One head produces one weight row per position, so each position can take one mixture of the others. Two heads give two independent mixtures. In a trained model, one head might track the previous token while another tracks the subject of the sentence, something like that.
 
-The heads cost nothing extra because the split is a reshape. `[1, 8, 16]` becomes `[1, 2, 8, 8]` without copying any numbers. The output projection mixes the heads back together.
+The heads cost nothing extra because the split is just a reshape. `[1, 8, 16]` becomes `[1, 2, 8, 8]` without copying any numbers. The output projection mixes the heads back together.
 
 <Label>The cost</Label>
 
-## The square that grows
+## The square that keeps growing
 
 The scores matrix is `[T, T]` for every head. Double the length and it has four times the entries. On Day 2 we measured this on the laptop CPU with PyTorch's plain math backend, which builds that matrix in memory. At 1,024 tokens a forward pass grew resident memory by {mib(math(1024).rss_growth_bytes)} MiB. At 8,192 tokens it grew by {mib(math(8192).rss_growth_bytes)} MiB. Those numbers come from `runs/day2-exp014-sdpa.jsonl`.
 
-Day 2 replaced this path with PyTorch's fused attention kernel, which never stores the full square. The Day 1 path stays in the code as the reference that the fused one is checked against.
+Day 2 replaced this path with PyTorch's fused attention kernel, which never stores the full square. The Day 1 path stays in the code as the reference the fused one gets checked against.
 
 <Figure label="Playground" caption="The matrices of one head, drawn to scale. Drag the sequence length and watch the score square outgrow everything else.">
   <AttentionShapes client:visible />
@@ -147,11 +147,11 @@ Day 2 replaced this path with PyTorch's fused attention kernel, which never stor
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Pictures of a trained model's attention.** The Day 1 model had 541,952 parameters and trained for 200 steps on one block. Its attention patterns would show noise. The Day 4 model is large enough and trained long enough to be worth looking at.
+- **Pictures of a trained model's attention.** The Day 1 model had 541,952 parameters and trained for 200 steps on one block. Its attention patterns would just be noise. The Day 4 model is big enough and trained long enough to be worth looking at.
 - **Dropout on the attention weights.** The layer supports it, but every config so far sets `dropout = 0.0`. At these data sizes the models are undertrained, not overfit.
-- **A KV cache.** Generation recomputes the whole sequence for every new token. Caching keys and values is EXP-071 on Day 5.
+- **A KV cache on Day 1.** This first generator recomputes the whole sequence. [Day 5's cached generator](/posts/kv-cache-in-practice/) matched every greedy token and ran 10.6 to 15.8 percent faster on the trained model in single T4 timings.
 - **Cross-attention.** An encoder-decoder model attends from one sequence to another. octlm is decoder-only, so every attention layer is self-attention.
 
 <Callout hue="gray" title="Sources">

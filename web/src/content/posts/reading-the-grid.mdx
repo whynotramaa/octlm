@@ -1,6 +1,6 @@
 ---
 title: Reading a grid through seed noise
-description: "Eight architectures, three seeds each, one budget. Before reading any gap between two rows, read how far one row moves when only the random seed changes. On Day 2 that one number decided almost everything."
+description: "Eight architectures, three seeds each, one budget. Before you read any gap between two rows, read how far one row moves when only the random seed changes. On Day 2 that one number decided almost everything."
 day: 2
 order: 8
 exps: []
@@ -16,21 +16,21 @@ import NoiseFloor from "../../widgets/NoiseFloor.tsx";
 export const grid = variantGrid();
 export const row = (name) => grid.find((r) => r.variant === name);
 
-Day 2 ran every component comparison as one grid on a Colab T4. Each variant changes one thing about the Day 1 baseline, except `modern`, which combines the four keepers. Every variant trained with three different random seeds at the same budget. This post reads the whole grid, and the lesson it taught is about the reading, not about any one component.
+Day 2 ran every component comparison as one grid on a Colab T4. Each variant changes one thing about the Day 1 baseline, except `modern`, which combines the four keepers. Every variant trained with three different random seeds at the same budget. This post reads the whole grid, and honestly the lesson here is about how to read it, not about any one component.
 
 <Label>The setup</Label>
 
 ## What was held fixed
 
 - Width 256, 4 layers, 8 query heads and a 256-token context, about 3.3 million parameters.
-- 400 steps at batch 8, which is 819,200 training tokens per run.
+- 400 steps at batch 8, so 819,200 training tokens per run.
 - The same corpus, tokenizer and validation blocks for every run.
 - Seeds 1337, 1338 and 1339, the same three for every variant.
 - The grid's 24 runs took 249 seconds of training and evaluation on the T4, about 11 times faster per step than the laptop.
 
 The grid reports bits per byte separately on held-out code and prose, the mean over three seeds, and the spread, which is the largest seed's result minus the smallest.
 
-<Figure label="Measured" caption="All eight variants. The dot is the mean over three seeds. The bar's length is the spread across seeds, drawn centered on the mean because the note records the range, not where each seed fell. The gray band is the baseline's spread. Switch between code and prose. Hover a row for exact numbers.">
+<Figure label="Measured" caption="All eight variants. The dot is the mean over three seeds. The bar's length is the spread across seeds, centered on the mean because the note records the range, not where each seed fell. The gray band is the baseline's spread. Switch between code and prose, hover a row for exact numbers.">
   <GridChart client:visible rows={grid} />
 </Figure>
 
@@ -38,7 +38,7 @@ The grid reports bits per byte separately on held-out code and prose, the mean o
 
 ## Read the spread before the gap
 
-The baseline, with nothing changed except the seed, moved {row("baseline").codeSpread} bits per byte on code across its three runs. The seed changes the initial weights and the order of the batches, and at 400 steps that is enough to move the result by 0.04. Any difference between two variants smaller than that could come from the seeds alone.
+The baseline, with nothing changed except the seed, moved {row("baseline").codeSpread} bits per byte on code across its three runs. The seed changes the initial weights and the order of the batches, and at 400 steps that's enough to move the result by 0.04. So any difference between two variants smaller than that could just be the seeds.
 
 Read that way, the grid says:
 
@@ -52,9 +52,9 @@ Read that way, the grid says:
 | mqa-1 | 1 KV head | {(row("mqa-1").code - row("baseline").code).toFixed(4)} | Inside the noise |
 | modern | RoPE, RMSNorm, SwiGLU, 2 KV heads | {(row("modern").code - row("baseline").code).toFixed(4)} | Best mean, widest spread |
 
-Negative is better. Two of six single changes produced a readable result, one good and one bad. The rest are indistinguishable from the baseline at this budget. "Indistinguishable" is not "equal": a real 0.01 improvement would look exactly like this.
+Negative is better. Two of six single changes gave a readable result, one good and one bad. The rest can't be told apart from the baseline at this budget. And "can't be told apart" is not "equal", a real 0.01 improvement would look exactly like this.
 
-<Figure label="Playground" caption="Pick any two variants from the grid. Each bar is that variant's seed range, the dot its mean. If the bars overlap, three seeds cannot separate them.">
+<Figure label="Playground" caption="Pick any two variants from the grid. Each bar is that variant's seed range, the dot is its mean. If the bars overlap, three seeds can't separate them.">
   <NoiseFloor client:visible rows={grid} />
 </Figure>
 
@@ -62,23 +62,23 @@ Negative is better. Two of six single changes produced a readable result, one go
 
 ## `modern` against `swiglu`, unresolved
 
-The combined stack has the best code and prose means in the grid, on a quarter of the baseline's cache. Its margin over `swiglu` alone is {(row("swiglu").code - row("modern").code).toFixed(3)} on code. Its own seed spread is {row("modern").codeSpread}, almost three times the baseline's. The grid ranks the two and cannot separate them.
+The combined stack has the best code and prose means in the grid, with a quarter of the baseline's cache. Its margin over `swiglu` alone is {(row("swiglu").code - row("modern").code).toFixed(3)} on code. But its own seed spread is {row("modern").codeSpread}, almost three times the baseline's. So the grid ranks the two and can't separate them.
 
-The note's diagnosis is that the fix is steps, not seeds. More seeds would give a better estimate of a noisy number. More training would make the number less noisy, because an undertrained model's result depends heavily on where it started. At 3.27 million parameters and 2.96 million training tokens, each model saw about one token per parameter. Compute-optimal training wants about 20.
+The note's diagnosis is that the fix is more steps, not more seeds. More seeds would give a better estimate of a noisy number. More training would make the number less noisy in the first place, because an undertrained model's result depends a lot on where it started. At 3.27 million parameters and 2.96 million training tokens, each model saw about one token per parameter. Compute-optimal training wants about 20.
 
 <Label>What it led to</Label>
 
 ## The grid is why the plan changed
 
-Day 3 planned to fix this by raising the budget fivefold and remeasuring the noise first, as "Stage 0". Working out the numbers showed that even that budget would be about 18 times too small, and the corpus would repeat. [Why the plan changed](/posts/why-the-plan-changed/) covers the arithmetic. Day 5 measures the seed spread again at a budget where the models are trained properly, and that spread becomes the smallest effect a comparison may claim.
+Day 3 planned to fix this by raising the budget fivefold and remeasuring the noise first, as "Stage 0". But when I worked out the numbers, even that budget would be about 18 times too small, and the corpus would repeat. [Why the plan changed](/posts/why-the-plan-changed/) covers the arithmetic. [Day 5 measured the seed spread again](/posts/seed-spread-at-scale/) at 98.3M tokens per run. The larger range fell to 0.0050 bits per byte, and the modern stack beat the baseline by 0.0338, well clear of it.
 
-The rule that survives is that every comparison states its noise floor first, and a gap inside it is recorded as unresolved with its numbers, not as a win.
+The rule that survives is that every comparison states its noise floor first, and a gap inside it gets recorded as unresolved with its numbers, not as a win.
 
 <Label>A housekeeping note</Label>
 
 ## Where these numbers live
 
-The 24 runs happened on a Colab VM, and their JSONL never came back to the repository. `runs/day2-variants.jsonl` holds only two records from an earlier laptop run. The table in `notes/day2.md` is the record, and this page parses it at build time. The note warns that a local `octlm.day2 report` summarizes those two rows and must not be read as the Day 2 result.
+The 24 runs happened on a Colab VM, and their JSONL never came back to the repo. `runs/day2-variants.jsonl` only holds two records from an earlier laptop run. The table in `notes/day2.md` is the record, and this page parses it at build time. The note warns that a local `octlm.day2 report` summarizes those two rows and must not be read as the Day 2 result.
 
 <Callout hue="gray" title="Sources">
   <p>Every grid number is parsed from the variant-grid table in <code>notes/day2.md</code>. The diagnosis and the tokens-per-parameter figure come from the same note. Hoffmann et al., <a href="https://arxiv.org/abs/2203.15556">Training Compute-Optimal Large Language Models</a>, for the roughly 20 tokens per parameter.</p>

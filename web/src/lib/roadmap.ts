@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const ROOT = resolve(process.cwd(), "..");
 
-export type Status = "done" | "built" | "pending" | "planned";
+export type Status = "done" | "switched" | "built" | "pending" | "planned";
 export type Experiment = { id: string; title: string; status: Status };
 export type Day = { day: number; title: string; experiments: Experiment[] };
 export type Retired = { first: string; now: string };
@@ -15,7 +15,9 @@ function noteFor(day: number): string | null {
   return existsSync(path) ? readFileSync(path, "utf-8") : null;
 }
 
-function resultStatus(note: string, id: string): Status {
+export function resultStatus(note: string, id: string): Status {
+  if (note.includes(`- [x] ${id}`)) return "done";
+  if (note.includes(`- [ ] ${id}`)) return "built";
   const start = note.search(new RegExp(`^## ${id}\\b`, "m"));
   if (start < 0) return "planned";
   const section = note.slice(start).split(/^## (?!#)/m)[1] ?? "";
@@ -51,7 +53,7 @@ function planDays(): Day[] {
 }
 
 export function roadmap(): Day[] {
-  const early = [1, 2, 3].map((day) => noteDay(day, noteFor(day) ?? "", day === 3 ? "built" : "done"));
+  const early = [1, 2, 3].map((day) => noteDay(day, noteFor(day) ?? "", day === 3 ? "switched" : "done"));
   return [...early, ...planDays()];
 }
 

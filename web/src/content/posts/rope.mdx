@@ -1,6 +1,6 @@
 ---
 title: RoPE, position as a rotation
-description: "Rotary position embedding turns each query and key by an angle proportional to its position, so attention scores depend on how far apart two tokens are. Day 2 measured how far past its training length it holds up."
+description: "Rotary position embedding turns each query and key by an angle proportional to its position, so attention scores depend on how far apart two tokens are. Day 2 measured how far past its training length it actually holds up."
 day: 2
 order: 2
 exps: ["EXP-009"]
@@ -18,44 +18,44 @@ import RopeFrequencies from "../../widgets/RopeFrequencies.tsx";
 export const sweep = noteTable(2, "EXP-009, the length sweep");
 export const col = (name) => sweep.map((r) => [num(r["Evaluation length"]), num(r[name])]);
 
-Day 1 added position by summing a position vector into each token vector before the first block. Every current open decoder does something different. It leaves the token vectors alone and rotates the queries and keys inside every attention layer. This is RoPE, and it was the first component Day 2 swapped in.
+Day 1 added position by summing a position vector into each token vector before the first block. Every current open decoder does it differently. It leaves the token vectors alone and rotates the queries and keys inside every attention layer. That's RoPE, and it was the first thing Day 2 swapped in.
 
 <Label>The problem</Label>
 
 ## Attention cares about distance, not absolute position
 
-Whether "it" should read "cat" depends on how far back "cat" is and what lies between, not on whether the pair sits at positions 3 and 7 or 503 and 507. A learned position table gives each absolute position its own vector, and the model has to learn separately that position pairs (3, 7) and (503, 507) are alike. It also has no vector at all past its last row.
+Whether "it" should read "cat" depends on how far back "cat" is and what's in between, not on whether the pair sits at positions 3 and 7 or 503 and 507. A learned position table gives each absolute position its own vector, so the model has to learn separately that the pairs (3, 7) and (503, 507) are alike. And past its last row it has no vector at all.
 
-What we want is a score $q_m \cdot k_n$ that depends on the content of both tokens and on the offset $m - n$, and on nothing else about $m$ and $n$.
+What we actually want is a score $q_m \cdot k_n$ that depends on the content of both tokens and on the offset $m - n$, and nothing else about $m$ and $n$.
 
 <Label>The idea</Label>
 
 ## Rotate each pair of channels by an angle that grows with position
 
-Split the query's $d$ channels into $d/2$ adjacent pairs, and treat each pair as a point in a plane. At position $m$, rotate pair $i$ by the angle $m\,\theta_i$:
+Split the query's $d$ channels into $d/2$ adjacent pairs, and treat each pair as a point on a plane. At position $m$, rotate pair $i$ by the angle $m\,\theta_i$:
 
 $$
 \begin{pmatrix} q'_{2i} \\ q'_{2i+1} \end{pmatrix} = \begin{pmatrix} \cos m\theta_i & -\sin m\theta_i \\ \sin m\theta_i & \cos m\theta_i \end{pmatrix} \begin{pmatrix} q_{2i} \\ q_{2i+1} \end{pmatrix}, \qquad \theta_i = 10000^{-2i/d}
 $$
 
-Do the same to the key at position $n$. The dot product of two rotated 2D vectors depends only on the angle between them. Rotating $q$ by $m\theta$ and $k$ by $n\theta$ is the same, inside the dot product, as rotating nothing and turning $k$ by $(n - m)\theta$:
+Do the same to the key at position $n$. The dot product of two rotated 2D vectors only depends on the angle between them. So rotating $q$ by $m\theta$ and $k$ by $n\theta$ is the same, inside the dot product, as rotating nothing and turning $k$ by $(n - m)\theta$:
 
 $$
 (R_{m\theta}\, q)^\top (R_{n\theta}\, k) = q^\top R_{(n-m)\theta}\, k
 $$
 
-So the score depends on the content of $q$ and $k$ and on $n - m$. That is the property we wanted, and it holds in every pair, each at its own speed.
+So the score depends on the content of $q$ and $k$ and on $n - m$. That's exactly the property we wanted, and it holds in every pair, each one at its own speed.
 
-<Figure label="Playground" caption="One channel pair of one query and one key. The rotation angle is position times θᵢ. Shift both positions and the dot product holds still. Change their distance and it moves.">
+<Figure label="Playground" caption="One channel pair of one query and one key. The rotation angle is position times θᵢ. Shift both positions and the dot product doesn't move. Change their distance and it does.">
   <RopeRotate client:visible />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - "Shift both by" turns both arrows by the same angle. The angle between them is fixed, so the dot product is fixed to four decimals.
 - Changing one position changes the angle between them, and the dot product follows.
-- The lengths of $q$ and $k$ never change. A rotation does not scale, so RoPE carries position without changing how large a score can get.
-- Pair 0 turns a full radian per position and wraps around the circle about every 6 positions. It can tell neighbors apart and nothing more. Pair 3 turns so slowly that it separates positions dozens of tokens apart.
+- The lengths of $q$ and $k$ never change. A rotation doesn't scale anything, so RoPE carries position without changing how big a score can get.
+- Pair 0 turns a full radian per position and wraps around the circle about every 6 positions, so it can tell neighbors apart and nothing more. Pair 3 turns so slowly that it separates positions dozens of tokens apart.
 
 The Day 2 paper exercise traced the same thing by hand for pair 0, where $\theta = 1$:
 
@@ -74,45 +74,45 @@ The Day 2 paper exercise traced the same thing by hand for pair 0, where $\theta
 
 ## Tables once per forward pass, rotation per layer
 
-The cosines and sines depend only on the length and the head width, so octlm builds them once per forward pass and every layer reuses them. Nothing is learned, and there is no maximum length.
+The cosines and sines only depend on the length and the head width, so octlm builds them once per forward pass and every layer reuses them. Nothing is learned, and there's no maximum length.
 
 <Source file="octlm/model.py" symbol="rope_tables" />
 
-`scale` is position interpolation, covered below. The rotation itself uses the paper's elementwise form on each adjacent pair:
+`scale` is position interpolation, which comes up below. The rotation itself uses the paper's elementwise form on each adjacent pair:
 
 <Source file="octlm/model.py" symbol="apply_rope" />
 
-RoPE applies to queries and keys only, never to values. The values carry content to be mixed, and position has already done its job by shaping the scores. The math runs in float32 even when the model runs in half precision, and the result is cast back.
+RoPE applies to queries and keys only, never values. The values carry content to be mixed, and position has already done its job by shaping the scores. The math runs in float32 even when the model runs in half precision, and the result is cast back.
 
-Two tests hold the implementation to the two properties above: `test_rotation_preserves_length` and `test_scores_depend_only_on_relative_distance`. A test on this site checks the page's `rope_tables` and `apply_rope` ports against the Python functions.
+Two tests hold the implementation to the two properties above, `test_rotation_preserves_length` and `test_scores_depend_only_on_relative_distance`. A test on this site checks the page's `rope_tables` and `apply_rope` ports against the Python functions.
 
 <Label>EXP-009</Label>
 
-## How far past the training length does it hold?
+## How far past the training length does it hold ?
 
-`day-wise.md` framed RoPE as "extrapolation to 2K, 4K, 8K". The Position Interpolation paper says otherwise. Past the trained length, raw RoPE can fail badly, with perplexity above 1,000. So the note stated the opposite hypothesis and tested it.
+`day-wise.md` framed RoPE as "extrapolation to 2K, 4K, 8K". The Position Interpolation paper says otherwise, past the trained length raw RoPE can fail badly, with perplexity above 1,000. So the note wrote the opposite hypothesis and tested that.
 
-Setup: two models trained at a 512-token context on the Day 2 corpus, one with sinusoidal positions and one with RoPE. The control is sinusoidal because a learned table cannot run past 512 at all. Both were then evaluated at five lengths. A third column evaluates the RoPE model with interpolation, which divides every position by (evaluation length ÷ 512) so the angles stay inside the range seen in training.
+Setup, two models trained at a 512-token context on the Day 2 corpus, one with sinusoidal positions and one with RoPE. The control is sinusoidal because a learned table can't run past 512 at all. Both were then evaluated at five lengths. A third column evaluates the RoPE model with interpolation, which divides every position by (evaluation length ÷ 512) so the angles stay inside the range training saw.
 
-<Figure label="Measured" caption="Bits per byte on held-out text at each evaluation length, lower is better. Both models trained at 512 tokens. From the EXP-009 table in notes/day2.md; the JSONL for this run stayed on the Colab VM.">
+<Figure label="Measured" caption="Bits per byte on held-out text at each evaluation length, lower is better. Both models trained at 512 tokens. From the EXP-009 table in notes/day2.md, the JSONL for this run stayed on the Colab VM.">
   <LineChart client:visible series={[{ name: "sinusoidal", points: col("Sinusoidal"), slot: 2 }, { name: "RoPE", points: col("RoPE"), slot: 1 }, { name: "RoPE interpolated", points: col("RoPE interpolated"), slot: 3, dashed: true }]} x={{ label: "evaluation length (tokens)", log: true }} y={{ label: "bits per byte" }} markers height={320} />
 </Figure>
 
-### What happened?
+### So what happened ?
 
 - RoPE beats sinusoidal at every length, by 0.76 bits per byte at 2,048.
-- Both models improve from 512 to 2,048. A longer window gives each prediction more context, and fewer positions sit at the start of a block with little context.
+- Both models get better from 512 to 2,048. A longer window gives each prediction more context, and fewer positions sit at the start of a block with barely any context.
 - Both turn back up after 4,096, which is 8 times the trained length.
-- Nothing collapses. At 16 times the trained length RoPE is worse than at 512 but nowhere near the failure the paper reports. The note's explanation is that the paper's models trained at 2,048, so they met far larger absolute distances than a model trained at 512 meets at 8,192.
-- Interpolation helps only at 8,192, by 0.032. At 1,024 to 4,096 it costs 0.02 to 0.04, because squeezing the angles below what training saw hurts while raw extrapolation still works.
+- Nothing collapses. At 16 times the trained length RoPE is worse than at 512 but nowhere near the failure the paper reports. The note's explanation is that the paper's models trained at 2,048, so they met way bigger absolute distances than a model trained at 512 meets at 8,192.
+- Interpolation only helps at 8,192, by 0.032. From 1,024 to 4,096 it costs 0.02 to 0.04, because squeezing the angles below what training saw hurts while raw extrapolation still works fine.
 
-Decision: keep RoPE. Interpolate only past 4 times the trained length, and re-check that crossover after any change to the training context. The paper's other half, fine-tuning for 1,000 steps at the longer length, was not tested.
+Decision, keep RoPE. Only interpolate past 4 times the trained length, and re-check that crossover after any change to the training context. The paper's other half, fine-tuning for 1,000 steps at the longer length, wasn't tested.
 
 <Label>Skipped</Label>
 
-## What we did not build, and why
+## What we didn't build, and why
 
-- **Fine-tuning at the longer length.** The Position Interpolation result depends on it. It belonged to a later phase, and that phase was dropped.
+- **Fine-tuning at the longer length.** The Position Interpolation result depends on it. It belonged to a later phase, and that phase got dropped.
 - **NTK-aware or YaRN scaling.** Both change the base frequency instead of dividing positions. Plain interpolation already answered the question at our lengths.
 - **A different base.** octlm keeps 10,000. Qwen's config sets its own base, and Day 6 reads it from `config.json`.
 
