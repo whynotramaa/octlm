@@ -97,8 +97,8 @@ Decision: keep the Qwen path in `model.py`. All four Day 6 exit checks pass.
 
 ## Not built yet
 
-- **A stop token.** Day 7 adds it to the harness loop.
-- **Sampling settings for Qwen.** The [Qwen3-0.6B model card](https://huggingface.co/Qwen/Qwen3-0.6B) warns against greedy decoding in thinking mode because of endless repetition. For non-thinking mode it recommends temperature 0.7, top-p 0.8 and top-k 20, and octlm has no top-p yet. The plan's Day 7 baseline says temperature 0. That conflict has to be settled in the Day 7 note before the baseline runs.
+- **A stop token in the benchmark.** The benchmark keeps its fixed 32 tokens for parity. After Day 6, `generate_cached` accepts stop IDs, and `reply` stops at either end ID listed in the pinned `generation_config.json`, `<|im_end|>` or `<|endoftext|>`.
+- **Greedy decoding for the harness.** The [Qwen3-0.6B model card](https://huggingface.co/Qwen/Qwen3-0.6B) warns against greedy decoding in thinking mode because of endless repetition. So the Day 7 harness samples in non-thinking mode with the card's temperature 0.7, top-p 0.8 and top-k 20, and runs each task under several seeds. Greedy decoding stays for parity checks only.
 - **Faster GQA on the T4.** Timing `repeat_interleave` keys against `enable_gqa` would test the kernel lead.
 
 <Callout hue="gray" title="Sources">

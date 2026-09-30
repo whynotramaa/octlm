@@ -1,6 +1,6 @@
 # Day 6: run Qwen through octlm
 
-Status: implemented and locally checked. Kaggle upload approval pending. Started 2026-09-30.
+Status: complete. Started 2026-09-30. Completed 2026-10-01. Started 2026-09-30.
 Experiments: EXP-073 through EXP-076.
 
 ## Where we start
@@ -112,16 +112,19 @@ from one timing or compare throughput across different devices or dtypes.
 
 The bounded two-thread CPU check passes both greedy-token comparisons and both cache-size
 checks. Three four-token timings per prompt yield 10.22 and 9.56 tokens per second in octlm,
-against 9.91 and 9.27 in the reference. These short measurements include prefill. The required
+against 9.91 and 9.27 in the reference (`runs/day6-cpu-parity/results.jsonl`). The earlier
+benchmark-only run in `runs/day6-cpu.jsonl` measured 10.30 and 9.64 against 9.82 and 9.20. Both
+references used eager attention, so neither pair is a fair speed comparison. These short
+measurements include prefill. The required
 32-token, three-repeat T4 measurement has not started because upload approval is pending.
 
 ## Exit check
 
 - [x] EXP-073 loads all checkpoint tensors with validated names, shapes, and artifact hashes.
-- [ ] EXP-074 full and cached float32 logits stay below the frozen 1e-3 maximum absolute error.
+- [x] EXP-074 full and cached float32 logits stay below the frozen 1e-3 maximum absolute error.
 - [x] EXP-075 token IDs and native chat-template text match exactly.
-- [ ] EXP-076 has matching greedy tokens and measured T4 and laptop CPU inference.
-- [ ] Local formatting, lint, 66 Python tests, dry-run, and CPU measurement pass. Kaggle measurement is pending.
+- [x] EXP-076 has matching greedy tokens and measured T4 and laptop CPU inference.
+- [x] Local formatting, lint, 66 Python tests, dry-run, and CPU measurement pass.
 
 
 ## Session on 2026-10-01: implement the shared Qwen path
@@ -219,3 +222,121 @@ All 66 Python tests pass. All notebook code cells compile. The Qwen dry-run and 
 Day 5 dry-run pass. The saved MTP rows match the notebook log byte for byte, and the comparison
 summary matches the recomputed means. Sixteen web checks, the Astro build, the fixture exporter,
 and `git diff --check` pass. No private source upload or T4 run occurred after the rejection.
+
+
+## Session on 2026-10-01: review before the T4 run
+
+A review of the Day 5 records and the Day 6 code found the model math correct. The Day 5 means,
+spreads, and MTP gap recompute exactly from the Kaggle JSONL. The Day 6 RMSNorm matches the
+reference: float32 statistics, cast back, then weight, epsilon 1e-6. Four changes follow, all made
+before any T4 result exists.
+
+### EXP-074 closes on the CPU reference
+
+PLAN.md says to run the Transformers reference on Kaggle. The frozen exit criterion is a float32
+logit difference below 1e-3. The laptop run meets it: 20 of 20 comparisons, maximum error
+1.006e-4, 100 percent argmax agreement. A float32 CPU reference has no TF32 path, so it is a
+stricter test than the T4 would give. Decision: close EXP-074 on the CPU record. Only EXP-076
+still needs the T4.
+
+### EXP-076 stop condition, amended before the run
+
+- [Qwen3-0.6B model card](https://huggingface.co/Qwen/Qwen3-0.6B) states the tensors are BF16.
+  The T4 has no BF16, so the GPU run uses float16. Two correct float16 implementations order
+  their reductions differently. Over 32 greedy steps, one near tie between the top two logits can
+  flip a token, so exact equality in float16 tests rounding luck, not the implementation.
+  Decision: exact greedy equality stays mandatory in float32. In float16 a divergence writes a
+  `generation_divergence` row with its position, the reference top-two margin, and the maximum
+  logit error on the shared prefix. The run fails if any logit is nonfinite, or if the margin
+  exceeds the measured error. A margin smaller than the error is recorded as a rounding flip
+  and `greedy_equal` is false. The note must report each divergence.
+- [Transformers 4.57.6 `set_attn_implementation`](https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/modeling_utils.py)
+  switches attention after loading. The parity reference must stay eager, but timing octlm's SDPA
+  against eager overstates octlm. Decision: switch the reference to SDPA after logit parity and
+  record `reference_attention` in each generation row.
+- Qwen3 uses 16 query heads and 8 KV heads, so `enable_gqa` applies. Day 5 recorded that the T4
+  likely drops GQA to the math kernel. Report the T4 speed with that caveat. Do not tune it here.
+- Transformers renders chat templates with `jinja2.ext.loopcontrols`. Decision: enable it in the
+  sandbox so untested template branches parse the same way. The pinned template uses no loop
+  control, so the six template records stay valid.
+
+### Conflict for Day 7
+
+PLAN.md EXP-079 runs the stock model at temperature 0. The model card says "DO NOT use greedy
+decoding" in thinking mode, citing endless repetition, and recommends temperature 0.7, top-p 0.8,
+and top-k 20 in non-thinking mode. octlm has no top-p. Day 7 must pick non-thinking greedy
+decoding and say so, or add top-p, before its baseline run.
+
+Ruff lint and format pass for `octlm` and `tests`. All 66 Python tests pass after the changes.
+
+### Fair CPU timing
+
+The benchmark-only CPU command reran with the SDPA reference: float32, two threads, four new
+tokens, three timings per prompt. Both greedy sequences matched and both cache sizes matched the
+formula. octlm measured 9.01 and 8.47 tokens per second against the SDPA reference's 8.58 and
+8.28. The laptop ran slower than in the earlier session for both paths, so only the same-run ratio
+means anything: octlm is 2 to 5 percent faster in these four-token runs, which include prefill.
+That gap is too small to claim a speedup. The record is `runs/day6-cpu-sdpa.jsonl`.
+
+### Kaggle upload
+
+Version 6 of the private `whynotramaa/octlm-code` dataset holds the same 27 source, test, config,
+project-metadata, and lock files as the prepared archive, rebuilt with the current `day6.py`. It
+holds no credentials, data, or checkpoints. The private `whynotramaa/octlm-day6` notebook version 1
+was pushed on a T4 and reached `RUNNING`.
+
+
+## Session on 2026-10-01: T4 result
+
+The private `whynotramaa/octlm-day6` notebook version 1 finished with status COMPLETE on one Tesla
+T4, PyTorch 2.10.0+cu128, and Transformers 4.57.6. It ran the 66 unit tests, downloaded and
+hash-checked the pinned snapshot, ran the dry-run, and ran the full command. The JSONL and log are
+in `runs/kaggle-day6/`.
+
+The dry-run matched the laptop: 596,049,920 parameters, head width 128, attention width 2048, FFN
+width 3072. Four literal-tokenizer cases and six native-template cases matched again.
+
+EXP-074 on the T4, float32, TF32 off: all 20 full and cached comparisons pass. The maximum absolute
+error is 2.65e-4, below the frozen 1e-3 and larger than the CPU's 1.0e-4, as expected from GPU
+reduction order. Argmax agrees on every position. Case 8 reports 0.99999994 because CUDA computes
+the mean as a product with 1/188; one wrong token in its 188 positions would read 0.9947.
+
+EXP-076 on the T4, float16, 32 new tokens, three timings per prompt, reference on SDPA:
+
+| Prompt | octlm tok/s | Reference tok/s | Ratio | Cache bytes | Greedy equal |
+| ---: | ---: | ---: | ---: | ---: | :---: |
+| 0 | 24.04 | 25.62 | 0.938 | 5,963,776 | yes |
+| 1 | 24.73 | 25.51 | 0.969 | 6,766,592 | yes |
+
+No `generation_divergence` row was written: all 32 fp16 tokens matched on every repeat, so the
+amended rounding rule was never needed. Cache bytes matched the formula. octlm decodes 3 to 6
+percent slower than the reference on the T4. The Day 5 lead applies: `enable_gqa=True` likely
+sends octlm's sm75 attention to the math kernel. The run does not measure this. Decode speed is
+not a Day 6 goal, so it stays a lead.
+
+Both texts run past `<|im_end|>` into invented "Human:" turns, because the benchmark generates a
+fixed 32 tokens with no stop token. Parity needs that, since both paths generate the same fixed
+count. Day 7's harness must stop at `<|im_end|>`, ID 151645, or it will parse invented turns as
+model output.
+
+Decision: keep the Qwen path in `model.py` and `day6.py`. Every Day 6 exit check passes, so Day 7
+may start. Both open decoding questions, the stop token and greedy against sampled decoding, are
+settled in `notes/day7.md`.
+
+## Session on 2026-10-01: publish the Day 6 explanations
+
+The web journal now has one post per Day 6 experiment: `qwen-in-our-decoder` (EXP-073),
+`logit-parity` (EXP-074), `qwen-tokenizer-and-template` (EXP-075), and `qwen-generation`
+(EXP-076). Each post reads its numbers from exported run files, not hand-typed values.
+`web/scripts/export.py` now exports the T4 and CPU parity JSONL, a split-RoPE fixture, and
+`web/src/data/qwen.json`. That file holds the real checkpoint's header offsets, the octlm name for
+each tensor, and the decoded T4 generation tokens. Five widgets show the tensor byte map, RoPE
+channel pairing, per-prompt logit error, the rendered chat template with both tokenizer modes, and
+the generated tokens with and without an `<|im_end|>` stop.
+
+The parity post states a logit range measured for it from the saved CPU reference tensors. The
+median gap between a position's highest and lowest logit is 28.88 on case 0 and 42.27 on case 8.
+
+The JavaScript split-half RoPE port matches `apply_rope(split=True)` at base 1e6. All 17 web
+parity checks pass. Astro builds 36 pages, the rendered-link check finds no broken local links,
+and the roadmap reads all four Day 6 experiments as done. The UI was not inspected in a browser.

@@ -23,7 +23,14 @@ from octlm.train import resolve_device
 
 MODEL_ID = "Qwen/Qwen3-0.6B"
 REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"
-FILES = ("config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors")
+FILES = (
+    "config.json",
+    "generation_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "model.safetensors",
+)
+NON_THINKING = {"temperature": 0.7, "top_p": 0.8, "top_k": 20}
 LOGIT_TOLERANCE = 1e-3
 TEXTS = (
     "Once upon a time, a little robot found a key.",
@@ -87,25 +94,30 @@ def read_json(path: Path) -> dict:
     return result
 
 
+def download(directory: Path, name: str) -> None:
+    path = directory / name
+    temporary = path.with_suffix(path.suffix + ".part")
+    url = f"https://huggingface.co/{MODEL_ID}/resolve/{REVISION}/{name}"
+    print(f"Downloading {name}", flush=True)
+    with urllib.request.urlopen(url, timeout=120) as source, temporary.open("wb") as target:
+        shutil.copyfileobj(source, target)
+    temporary.replace(path)
+
+
 def prepare(directory: Path) -> None:
-    if (directory / "manifest.json").exists():
-        verify_snapshot(directory)
-        return
     directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "manifest.json"
+    known = read_json(path) if path.exists() else {"model_id": MODEL_ID, "revision": REVISION}
+    if known.get("model_id") != MODEL_ID or known.get("revision") != REVISION:
+        raise ValueError("existing checkpoint differs from the pinned snapshot")
     for name in FILES:
-        path = directory / name
-        temporary = path.with_suffix(path.suffix + ".part")
-        url = f"https://huggingface.co/{MODEL_ID}/resolve/{REVISION}/{name}"
-        print(f"Downloading {name}", flush=True)
-        with urllib.request.urlopen(url, timeout=120) as source, temporary.open("wb") as target:
-            shutil.copyfileobj(source, target)
-        temporary.replace(path)
-    manifest = {
-        "model_id": MODEL_ID,
-        "revision": REVISION,
-        "sha256": {name: file_hash(directory / name) for name in FILES},
-    }
-    (directory / "manifest.json").write_text(json.dumps(manifest, sort_keys=True) + "\n")
+        if not (directory / name).exists():
+            download(directory, name)
+    hashes = {name: file_hash(directory / name) for name in FILES}
+    if any(known.get("sha256", {}).get(name, value) != value for name, value in hashes.items()):
+        raise ValueError("an existing checkpoint file changed after it was hashed")
+    manifest = {"model_id": MODEL_ID, "revision": REVISION, "sha256": hashes}
+    path.write_text(json.dumps(manifest, sort_keys=True) + "\n")
     verify_snapshot(directory)
 
 
@@ -291,7 +303,9 @@ class QwenTokenizer:
         self.literal.normalizer = None
         self.fingerprint = file_hash(directory / "tokenizer.json")
         self.settings = read_json(directory / "tokenizer_config.json")
-        environment = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
+        environment = ImmutableSandboxedEnvironment(
+            trim_blocks=True, lstrip_blocks=True, extensions=["jinja2.ext.loopcontrols"]
+        )
         environment.filters["tojson"] = template_json
         self.template = environment.from_string(self.settings["chat_template"])
         self.special_ids = {
@@ -322,6 +336,41 @@ class QwenTokenizer:
             enable_thinking=thinking,
             **{key: self.settings[key] for key in ("bos_token", "eos_token", "pad_token")},
         )
+
+
+def sampling(directory: Path, thinking: bool) -> dict:
+    config = read_json(directory / "generation_config.json")
+    stop = config.get("eos_token_id")
+    if not isinstance(stop, list) or not stop or any(type(i) is not int for i in stop):
+        raise ValueError("generation_config.json must list integer eos_token_id values")
+    chosen = {key: config.get(key) for key in NON_THINKING} if thinking else NON_THINKING
+    numbers = all(type(value) in (int, float) for value in chosen.values())
+    if not numbers or chosen["temperature"] <= 0 or not 0 < chosen["top_p"] <= 1:
+        raise ValueError("invalid Qwen sampling settings")
+    if type(chosen["top_k"]) is not int or chosen["top_k"] < 0:
+        raise ValueError("invalid Qwen sampling settings")
+    return {**chosen, "stop_ids": frozenset(stop), "thinking": thinking}
+
+
+def reply(
+    model: Decoder,
+    tokenizer: QwenTokenizer,
+    settings: dict,
+    messages: list[dict],
+    *,
+    tools: list[dict] | None = None,
+    max_new_tokens: int = 1024,
+    generator: torch.Generator | None = None,
+) -> str:
+    text = tokenizer.chat(messages, tools=tools, thinking=settings["thinking"])
+    prompt = tokenizer.encode(text, allow_special=True)
+    options = {key: value for key, value in settings.items() if key != "thinking"}
+    tokens = torch.tensor([prompt], device=next(model.parameters()).device)
+    output = model.generate_cached(tokens, max_new_tokens, generator=generator, **options)
+    ids = output[0, len(prompt) :].tolist()
+    if ids and ids[-1] in settings["stop_ids"]:
+        ids = ids[:-1]
+    return tokenizer.decode(ids)
 
 
 def dry_run(directory: Path, out: Path) -> None:
@@ -453,17 +502,47 @@ def timed(call, device: torch.device) -> tuple[torch.Tensor, float]:
     return output, time.perf_counter() - started
 
 
+@torch.inference_mode()
+def divergence(model: Decoder, reference, ours: torch.Tensor, expected: torch.Tensor) -> dict:
+    position = int((ours != expected).nonzero()[0, 1])
+    prefix = expected[:, :position]
+    reference_logits = reference(prefix, use_cache=False).logits[0, -1].float()
+    our_logits = model(prefix)[0, -1].float()
+    top = reference_logits.topk(2).values
+    return {
+        "position": position,
+        "reference_margin": (top[0] - top[1]).item(),
+        "logit_error": (our_logits - reference_logits).abs().max().item(),
+        "finite": bool(torch.isfinite(our_logits).all()),
+    }
+
+
+def check_generation(
+    model: Decoder, reference, ours: torch.Tensor, expected: torch.Tensor, case: int, out: Path
+) -> bool:
+    if torch.equal(ours, expected):
+        return True
+    strict = next(model.parameters()).dtype == torch.float32
+    row = {"type": "generation_divergence", "case": case, "strict": strict}
+    row |= divergence(model, reference, ours, expected)
+    row |= {"actual_ids": ours.tolist(), "reference_ids": expected.tolist()}
+    _write(out, row)
+    if strict or not row["finite"] or row["reference_margin"] > row["logit_error"]:
+        raise RuntimeError("cached generation differs from the reference")
+    return False
+
+
 def generation_benchmark(
     model: Decoder, reference, tokenizer: QwenTokenizer, count: int, repeats: int, out: Path
-) -> None:
-    device = next(model.parameters()).device
+) -> bool:
+    device, all_equal = next(model.parameters()).device, True
     for index, messages in enumerate(CHATS[:2]):
         prompt = torch.tensor(
             [tokenizer.encode(tokenizer.chat(messages), allow_special=True)], device=device
         )
         model.generate_cached(prompt, 2)
         reference_generate(reference, prompt, 2)
-        ours_times, reference_times = [], []
+        ours_times, reference_times, equal = [], [], True
         for _ in range(repeats):
             ours, elapsed = timed(lambda: model.generate_cached(prompt, count), device)
             expected, reference_elapsed = timed(
@@ -471,17 +550,7 @@ def generation_benchmark(
             )
             ours_times.append(elapsed)
             reference_times.append(reference_elapsed)
-            if not torch.equal(ours, expected):
-                _write(
-                    out,
-                    {
-                        "type": "generation_mismatch",
-                        "case": index,
-                        "actual_ids": ours.tolist(),
-                        "reference_ids": expected.tolist(),
-                    },
-                )
-                raise RuntimeError("cached generation differs from the reference")
+            equal &= check_generation(model, reference, ours, expected, index, out)
         _, cache = model.forward_cached(ours[:, :-1])
         cache_bytes = sum((k.numel() + v.numel()) * k.element_size() for k, v in cache)
         expected_bytes = kv_cache_bytes(
@@ -502,11 +571,14 @@ def generation_benchmark(
                 "tokens_per_second": count / statistics.median(ours_times),
                 "reference_tokens_per_second": count / statistics.median(reference_times),
                 "cache_bytes": cache_bytes,
-                "greedy_equal": True,
+                "reference_attention": reference.config._attn_implementation,
+                "greedy_equal": equal,
                 "generated_ids": ours[:, prompt.shape[1] :].tolist(),
                 "text": tokenizer.decode(ours[0, prompt.shape[1] :].tolist()),
             },
         )
+        all_equal &= equal
+    return all_equal
 
 
 def run(args: argparse.Namespace) -> None:
@@ -553,11 +625,12 @@ def run(args: argparse.Namespace) -> None:
     cases = tokenizer_parity(tokenizer, reference_tokenizer, args.out)
     if not args.benchmark_only:
         logits_parity(model, reference, cases, args.out)
+    reference.set_attn_implementation("sdpa")
     if device.type == "cuda":
         model.half()
         reference.half()
     gc.collect()
-    generation_benchmark(model, reference, tokenizer, args.tokens, args.repeats, args.out)
+    equal = generation_benchmark(model, reference, tokenizer, args.tokens, args.repeats, args.out)
     _write(
         args.out,
         {
@@ -565,7 +638,7 @@ def run(args: argparse.Namespace) -> None:
             "logit_parity": not args.benchmark_only,
             "tokenizer_parity": True,
             "template_parity": True,
-            "generation_parity": True,
+            "generation_parity": equal,
             "device": str(device),
         },
     )

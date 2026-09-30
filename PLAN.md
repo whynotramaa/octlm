@@ -72,7 +72,7 @@ The 150M row is why pretraining stops near 20M.
 
 ## Roadmap
 
-Days 1, 2, 4, and 5 are complete. Day 3a built four variants and stopped before any GPU run. New
+Days 1, 2, 4, 5, and 6 are complete. Day 3a built four variants and stopped before any GPU run. New
 experiment numbers start at EXP-065. EXP-020 through EXP-064 belonged to the first plan and stay
 retired. `notes/day3.md` maps each one to its new number or to the reason it was dropped.
 
@@ -137,8 +137,9 @@ Token IDs match exactly. The chat template renders the same text as the referenc
   across turns, so the system prompt runs once per task.
 - EXP-079. Eval set and baseline. Write 30 to 50 tasks in a small fixture repository. Each task has
   a check that passes or fails without judgment, such as a test passing or a file containing a
-  string. Run the stock instruct model at temperature 0. Record valid-call rate, task success, mean
-  steps, and tokens per second.
+  string. Run the stock instruct model in non-thinking mode with Qwen's recommended sampling and
+  several fixed seeds per task, as `notes/day7.md` records. Record valid-call rate, task success
+  with its seed spread, mean steps, and tokens per second.
 
 Exit check. One command runs the whole eval and writes JSONL. The stock model's numbers are in the
 note.

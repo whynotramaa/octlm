@@ -550,18 +550,22 @@ class Decoder(nn.Module):
         temperature: float = 0.0,
         top_k: int = 0,
         generator: torch.Generator | None = None,
+        top_p: float = 1.0,
+        stop_ids: frozenset[int] = frozenset(),
     ) -> Tensor:
         if token_ids.ndim != 2 or token_ids.shape[0] != 1 or token_ids.shape[1] < 1:
             raise ValueError("generation accepts one nonempty sequence")
         if max_new_tokens < 0 or temperature < 0 or top_k < 0:
             raise ValueError("generation counts, temperature, and top_k must not be negative")
+        if not 0 < top_p <= 1:
+            raise ValueError("top_p must be in (0, 1]")
         if max_new_tokens == 0:
             return token_ids
         logits, cache = self.forward_cached(token_ids[:, -self.config.context_length :])
         for step in range(max_new_tokens):
-            next_token = sample_token(logits[:, -1].float(), temperature, top_k, generator)
+            next_token = sample_token(logits[:, -1].float(), temperature, top_k, generator, top_p)
             token_ids = torch.cat((token_ids, next_token), dim=1)
-            if step + 1 == max_new_tokens:
+            if step + 1 == max_new_tokens or next_token.item() in stop_ids:
                 break
             if cache[0][0].shape[2] == self.config.context_length:
                 logits, cache = self.forward_cached(token_ids[:, -self.config.context_length :])
@@ -591,19 +595,31 @@ class Decoder(nn.Module):
 
 
 def sample_token(
-    logits: Tensor, temperature: float, top_k: int, generator: torch.Generator | None
+    logits: Tensor,
+    temperature: float,
+    top_k: int,
+    generator: torch.Generator | None,
+    top_p: float = 1.0,
 ) -> Tensor:
     if temperature == 0:
         return logits.argmax(dim=-1, keepdim=True)
-    probabilities = sampling_distribution(logits, temperature, top_k)
+    probabilities = sampling_distribution(logits, temperature, top_k, top_p)
     return torch.multinomial(probabilities.cpu(), 1, generator=generator).to(logits.device)
 
 
-def sampling_distribution(logits: Tensor, temperature: float, top_k: int) -> Tensor:
+def sampling_distribution(
+    logits: Tensor, temperature: float, top_k: int, top_p: float = 1.0
+) -> Tensor:
     if top_k:
         cutoff = logits.topk(min(top_k, logits.shape[-1]), dim=-1).values[:, -1:]
         logits = logits.masked_fill(logits < cutoff, float("-inf"))
-    return torch.softmax(logits / temperature, dim=-1)
+    probabilities = torch.softmax(logits / temperature, dim=-1)
+    if top_p >= 1:
+        return probabilities
+    ordered, order = probabilities.sort(dim=-1, descending=True)
+    ordered = ordered.masked_fill(ordered.cumsum(-1) - ordered >= top_p, 0.0)
+    kept = torch.zeros_like(probabilities).scatter(-1, order, ordered)
+    return kept / kept.sum(-1, keepdim=True)
 
 
 def parameter_count(model: nn.Module) -> int:
