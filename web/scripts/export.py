@@ -8,6 +8,7 @@ import torch
 from octlm.config import ProjectConfig
 from octlm.day2 import VARIANTS, tiled_attention
 from octlm.day5 import Int8Linear, spread
+from octlm.day6 import CHATS, QwenTokenizer, qwen_config, read_header, read_json, weight_names
 from octlm.model import (
     CausalSelfAttention,
     Decoder,
@@ -77,6 +78,8 @@ def export_runs() -> None:
     for name in ("inference", "spread", "mtp"):
         for source in sorted((ROOT / f"runs/kaggle-day5-{name}/day5").glob("*.jsonl")):
             export_jsonl(source, source.stem)
+    export_jsonl(ROOT / "runs/kaggle-day6/day6/results.jsonl", "day6-t4")
+    export_jsonl(ROOT / "runs/day6-cpu-parity/results.jsonl", "day6-cpu-parity")
 
 
 def tokenizer_fixture() -> dict:
@@ -289,6 +292,61 @@ def day5_fixture() -> dict:
     }
 
 
+def day6_fixture() -> dict:
+    cosine, sine = rope_tables(16, 8, 1.0, CPU, 1e6)
+    torch.manual_seed(3)
+    x = torch.randn(1, 1, 16, 8)
+    return {
+        "base": 1e6,
+        "x": x[0, 0].tolist(),
+        "rotated": apply_rope(x, cosine, sine, split=True)[0, 0].tolist(),
+    }
+
+
+def qwen_data() -> dict:
+    directory = ROOT / "artifacts/day6/qwen"
+    path = directory / "model.safetensors"
+    with path.open("rb") as stream:
+        entries, data_start = read_header(stream, path.stat().st_size)
+    config = qwen_config(read_json(directory / "config.json"))
+    names = weight_names(config)
+    tensors = [
+        {"name": name, "octlm": names[name], "shape": shape, "start": start, "end": end}
+        for name, (_, shape, start, end) in sorted(entries.items(), key=lambda x: x[1][2])
+    ]
+    tokenizer = QwenTokenizer(directory)
+    records = [json.loads(line) for line in (ROOT / "runs/kaggle-day6/day6/results.jsonl").open()]
+    generations = [
+        {
+            "case": row["case"],
+            "prompt": tokenizer.chat(CHATS[row["case"]]),
+            "pieces": [tokenizer.decode([token]) for token in row["generated_ids"][0]],
+            "ids": row["generated_ids"][0],
+        }
+        for row in records
+        if row["type"] == "qwen_generation"
+    ]
+    return {
+        "file_bytes": path.stat().st_size,
+        "header_bytes": data_start,
+        "dtype": "BF16",
+        "tensors": tensors,
+        "generations": generations,
+        "im_end": tokenizer.native.token_to_id("<|im_end|>"),
+        "config": {
+            "vocab_size": config.vocab_size,
+            "context_length": config.context_length,
+            "d_model": config.d_model,
+            "n_layers": config.n_layers,
+            "n_heads": config.n_heads,
+            "kv_heads": config.kv_heads,
+            "head_size": config.head_size,
+            "ff_hidden": config.hidden_size,
+            "rope_base": config.rope_base,
+        },
+    }
+
+
 def main() -> None:
     export_runs()
     fixtures = WEB / "fixtures"
@@ -303,6 +361,8 @@ def main() -> None:
     write(fixtures / "parameters.json", parameters_fixture())
     write(fixtures / "floats.json", floats_fixture())
     write(fixtures / "day5.json", day5_fixture())
+    write(fixtures / "day6.json", day6_fixture())
+    write(WEB / "src/data/qwen.json", qwen_data())
 
 
 if __name__ == "__main__":

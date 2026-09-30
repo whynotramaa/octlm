@@ -327,3 +327,11 @@ input[type="range"]:hover { filter: brightness(1.08); }
 .story-cut { color: var(--ink-3); }
 mark.repeat { color: inherit; background: color-mix(in oklch, var(--series-2) 24%, transparent); border-radius: 3px; transition: background var(--fast) var(--ease); }
 mark.repeat:hover { background: color-mix(in oklch, var(--series-2) 40%, transparent); }
+
+.token.dim { opacity: 0.38; }
+.token.special { background: color-mix(in oklch, var(--series-2) 14%, var(--surface)); border-color: color-mix(in oklch, var(--series-2) 45%, var(--line)); }
+.byte-strip { position: relative; height: 28px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.byte-strip span { position: absolute; top: 0; bottom: 0; transition: left var(--slow) var(--ease), width var(--slow) var(--ease); }
+.template-text { font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-chip); padding: 12px 14px; max-height: 360px; overflow: auto; margin: 0; }
+.template-text mark { background: color-mix(in oklch, var(--series-2) 18%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
+.data-table tbody tr.pick { cursor: pointer; }

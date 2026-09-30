@@ -1,0 +1,93 @@
+---
+title: Proving it's the same model
+description: "Fluent text doesn't prove the weights loaded right. Octlm compared every logit of Qwen3-0.6B against Transformers on ten prompts. The worst gap was 2.65e-4 on the T4 against a limit of 1e-3, fixed before the run, and the top token matched at every position."
+day: 6
+order: 2
+exps: ["EXP-074"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import ParityErrors from "../../widgets/ParityErrors.tsx";
+import cpu from "../../data/runs/day6-cpu-parity.json";
+import t4 from "../../data/runs/day6-t4.json";
+
+export const labels = ["Story sentence", "Code, tab, CRLF", "NUL, emoji, accent", "Indents, literal tags", "Chat 1, think off", "Chat 1, think on", "Chat 2, think off", "Chat 2, think on", "Tool call, think off", "Tool call, think on"];
+export const rows = (source) => source.filter((row) => row.type === "logit_parity");
+export const worst = (source) => Math.max(...rows(source).map((row) => row.max_absolute_error));
+export const sci = (value) => value.toExponential(2);
+export const tolerance = rows(t4)[0].tolerance;
+export const env = t4.find((row) => row.type === "qwen_environment");
+export const longest = Math.max(...t4.filter((row) => row.type === "template_parity").map((row) => row.ids.length));
+
+The last post loaded all {env.parameters.toLocaleString("en-US")} of Qwen's parameters into octlm. Now the question is whether it computes the same function as the official code. Generating nice text isn't proof. A model with one transposed matrix, or the wrong RoPE layout, can still produce sentences that look fine, just worse ones. The honest test compares the raw numbers.
+
+<Figure label="Measured" caption="Largest logit error for each of the ten prompts, as a share of the tolerance written down before the run. Switch between one full forward pass and two cached chunks.">
+  <ParityErrors client:visible cpu={cpu} t4={t4} labels={labels} />
+</Figure>
+
+<Label>What gets compared</Label>
+
+## Every logit, every position
+
+For each input position, the model outputs one score per vocabulary entry, called a logit. Qwen has 151,936 entries, so the {longest}-token tool-call prompt gives {(longest * 151936 / 1e6).toFixed(1)} million logits. The test runs the same token IDs through both implementations and takes the element-wise difference. It records three numbers per prompt:
+
+- **Maximum absolute error.** The single worst logit gap anywhere. This is the gate.
+- **Mean absolute error.** How far off a typical logit is.
+- **Argmax agreement.** The share of positions where both pick the same top token.
+
+A max error is strict. One bad position in one prompt fails the whole run, even if everything else matches.
+
+<Label>A fair reference</Label>
+
+## Remove every source of noise first
+
+The reference is Hugging Face Transformers 4.57.6, loaded from the same pinned files. The run removes everything that could make two correct implementations disagree:
+
+- **Float32 on both sides.** Half precision rounds after every operation, so errors pile up in different places.
+- **Eager attention in the reference.** It computes the softmax step by step, with no fused kernel choosing its own order.
+- **TF32 off on the GPU.** Ampere-class GPUs can quietly do float32 matrix products at lower precision. The T4 doesn't have TF32, but the flag stays off anyway.
+- **Eval mode.** No dropout.
+
+Then the test checks two paths through octlm. The full path runs the whole prompt in one call. The cached path splits the prompt in half, runs the first half, keeps its KV cache and feeds the second half on top. The cached path must match too, otherwise [the cache](/posts/kv-cache-in-practice/) would generate from slightly wrong numbers.
+
+<Source file="octlm/day6.py" symbol="logits_parity" />
+
+<Label>The limit, fixed in advance</Label>
+
+## Pick the tolerance before looking
+
+The note fixed the limit at a max absolute error of {sci(tolerance)} before the first real run, with a rule that it would not change after seeing results. That rule matters. If you pick the limit after seeing the numbers, any result can be made to pass.
+
+Why {sci(tolerance)}? In the saved reference logits, the gap between a position's highest and lowest logit has a median of 29 on the story prompt and 42 on the tool-call prompt. A mapping bug, such as a swapped projection or the wrong RoPE pairing, changes what every layer computes, so it shows up at the scale of those ranges. Float32 rounding across 28 layers stays near 1e-4, which is what both real runs measured. The limit sits between the two.
+
+<Label>Result</Label>
+
+## Both devices pass, with room to spare
+
+| | Laptop CPU | Kaggle T4 |
+| --- | ---: | ---: |
+| Comparisons | {rows(cpu).length} | {rows(t4).length} |
+| Worst max error | {sci(worst(cpu))} | {sci(worst(t4))} |
+| Share of tolerance | {(100 * worst(cpu) / tolerance).toFixed(1)}% | {(100 * worst(t4) / tolerance).toFixed(1)}% |
+| Top token agrees | every position | every position |
+
+Every one of the {rows(t4).length} T4 comparisons passed, and so did every CPU comparison. The T4's worst gap is larger than the CPU's. A GPU adds the same numbers in a different order, in parallel blocks, and floating-point addition isn't associative. So a larger gap on a different device is expected. A gap near 1 would mean a bug.
+
+One detail in the raw data looks like a failure but isn't. On the tool-call prompt, the T4 reports argmax agreement of 0.99999994 instead of 1. That prompt has 188 positions. A single wrong top token would show as 187 ÷ 188 = 0.9947. The tiny shortfall comes from how CUDA computes a mean, as a sum times 1/188, which rounds in float32. All 188 positions agree.
+
+Decision: the octlm decoder computes the same function as Qwen3's reference implementation. EXP-074 passes. Everything after this, the harness and the fine-tune, can trust `model.py`.
+
+<Label>Skipped</Label>
+
+## Not measured
+
+- **Half-precision parity.** Float16 logits drift further, and the drift says more about rounding than about the implementation. The generation post covers what float16 does to greedy tokens.
+- **Long prompts.** The longest test prompt is {longest} tokens. RoPE at base 1,000,000 is exact at any position, but the test doesn't go near Qwen's 40,960-token limit.
+- **A second checkpoint.** Only the pinned 0.6B commit was tested.
+
+<Callout hue="gray" title="Sources">
+  <p>The reference is <a href="https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/qwen3/modeling_qwen3.py">Transformers 4.57.6</a>, installed only in the Kaggle notebook and a temporary laptop environment, never in octlm's dependencies. <a href="https://docs.pytorch.org/docs/stable/notes/numerical_accuracy.html">PyTorch's numerical accuracy note</a> explains why results differ across devices and why TF32 matters. Measurements come from <code>runs/day6-cpu-parity/results.jsonl</code> and <code>runs/kaggle-day6/day6/results.jsonl</code>. The tolerance and decision are in <code>notes/day6.md</code>.</p>
+</Callout>

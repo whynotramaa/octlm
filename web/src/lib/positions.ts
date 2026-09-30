@@ -11,8 +11,8 @@ export function sinusoidal(length: number, width: number): Matrix {
   );
 }
 
-export function ropeAngles(length: number, headSize: number, scale = 1): Matrix {
-  const frequencies = Array.from({ length: headSize / 2 }, (_, i) => 1 / Math.pow(ROPE_BASE, (2 * i) / headSize));
+export function ropeAngles(length: number, headSize: number, scale = 1, base = ROPE_BASE): Matrix {
+  const frequencies = Array.from({ length: headSize / 2 }, (_, i) => 1 / Math.pow(base, (2 * i) / headSize));
   return Array.from({ length }, (_, position) => frequencies.map((f) => (position / scale) * f));
 }
 
@@ -34,4 +34,13 @@ export function applyRope(x: Matrix, angles: Matrix): Matrix {
       return rotatePair(row[column], row[column + 1], angles[position][column / 2]);
     }),
   );
+}
+
+export function applyRopeSplit(x: Matrix, angles: Matrix): Matrix {
+  return x.map((row, position) => {
+    const half = row.length / 2;
+    const out = new Array<number>(row.length);
+    for (let i = 0; i < half; i++) [out[i], out[i + half]] = rotatePair(row[i], row[i + half], angles[position][i]);
+    return out;
+  });
 }

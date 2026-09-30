@@ -1,0 +1,137 @@
+---
+title: A real model in our own decoder
+description: "Why a 26M story model can't run a tool harness, what Qwen3-0.6B brings, and how octlm reads its 1.5 GB safetensors file byte by byte into the same model.py. Five config switches were enough."
+day: 6
+order: 1
+exps: ["EXP-073"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import Flow from "../../widgets/Flow.tsx";
+import SafetensorsMap from "../../widgets/SafetensorsMap.tsx";
+import RopeLayouts from "../../widgets/RopeLayouts.tsx";
+import { modelConfig } from "../../lib/notes.ts";
+import { parameterCount } from "../../lib/model.ts";
+import qwen from "../../data/qwen.json";
+import t4 from "../../data/runs/day6-t4.json";
+
+export const day4 = modelConfig("day4");
+export const env = t4.find((row) => row.type === "qwen_environment");
+export const q = qwen.config;
+export const n = (value) => value.toLocaleString("en-US");
+export const ratio = Math.round(env.parameters / parameterCount(day4));
+export const gib = (qwen.file_bytes / 2 ** 30).toFixed(2);
+
+Day 4's model writes "Lily found a red ball and smiled." It can't answer "what is 2 + 2", and it can't ask to read a file. That skill comes from scale and from post-training, and free GPUs can pay for neither. So Day 6 borrows a model that has both, Qwen3-0.6B, and runs it through octlm's own `model.py`. It doesn't use Hugging Face's model code.
+
+The surprise is how little had to change. Qwen is the same kind of decoder we built on Day 2. It has more layers, wider vectors and a few extra details. Five new config switches and one weight loader were enough.
+
+<Figure label="Pipeline" caption="What happens between the checkpoint on disk and a forward pass. Click a stage.">
+  <Flow client:visible stages={[
+    { name: "Download", shape: "4 files", detail: "prepare() fetches config.json, tokenizer.json, tokenizer_config.json and model.safetensors at one pinned commit, then writes a SHA-256 manifest. Later loads refuse to start if any hash differs." },
+    { name: "Config", shape: "config.json", detail: "qwen_config() reads the architecture numbers and rejects any setting octlm doesn't implement, such as sliding-window attention, projection bias or RoPE scaling." },
+    { name: "Empty model", shape: "meta device", detail: "Decoder(config) is built on PyTorch's meta device, which records shapes without allocating memory. to_empty() then allocates real, uninitialized tensors once." },
+    { name: "Stream tensors", shape: `${qwen.tensors.length} entries`, detail: "safetensors() reads the header, then yields one tensor at a time. The loader maps each Hugging Face name to an octlm name, checks the shape and copies the values in." },
+    { name: "Check", shape: "nothing missing", detail: "Every expected tensor must arrive exactly once. The duplicate output matrix must equal the embedding. Then the model switches to eval mode." },
+  ]} />
+</Figure>
+
+<Label>Why borrow a model</Label>
+
+## What Qwen has that we can't train
+
+Our Day 4 model has {n(parameterCount(day4))} parameters and saw about 400 million tokens of children's stories. Qwen3-0.6B has {n(env.parameters)} parameters, about {ratio} times as many. Alibaba trained it on trillions of tokens and then post-trained it on examples of chat, instructions and tool calls. We can't afford that compute. The rest of the plan needs a model that follows instructions, so borrowing one is the only way forward.
+
+What we can do is run it through our own code. If octlm's decoder gives the same outputs as the official implementation, that proves our attention, norms, RoPE and cache are the real thing and not a toy version. The next post measures that match.
+
+<Label>What differs</Label>
+
+## Same design, bigger numbers, five switches
+
+| | Day 4 model | Qwen3-0.6B |
+| --- | ---: | ---: |
+| Parameters | {n(parameterCount(day4))} | {n(env.parameters)} |
+| Vocabulary | {n(day4.vocab_size)} | {n(q.vocab_size)} |
+| Context | {n(day4.context_length)} | {n(q.context_length)} |
+| Width | {day4.d_model} | {n(q.d_model)} |
+| Layers | {day4.n_layers} | {q.n_layers} |
+| Query heads / KV heads | {day4.n_heads} / {day4.kv_heads} | {q.n_heads} / {q.kv_heads} |
+| Head width | {day4.d_model / day4.n_heads} | {q.head_size} |
+| RoPE base | 10,000 | {n(q.rope_base)} |
+
+Both use RMSNorm before each sublayer, SwiGLU feed-forward layers, grouped-query attention, RoPE and a tied input and output embedding. That's the Day 2 `modern` stack. The differences are five switches, all off by default, so every earlier config and its fingerprint stays unchanged.
+
+1. **`head_dim`.** Octlm used to assume head width = width ÷ heads. Qwen has {q.n_heads} heads of {q.head_size}, so attention works in {q.n_heads * q.head_size} dimensions while the residual stream is only {n(q.d_model)} wide. The query and output projections are rectangular now.
+2. **`ff_hidden`.** The feed-forward width comes straight from the config ({n(q.ff_hidden)}) instead of Day 2's two-thirds rule.
+3. **`rope_base`.** The config sets {n(q.rope_base)} instead of 10,000. The playground below shows why.
+4. **`rope_split`.** This is the subtle one, also below.
+5. **`qk_norm`.** Qwen3 applies a small RMSNorm to each query head and each key head before RoPE. It keeps attention scores from growing too large.
+
+<Source file="octlm/day6.py" symbol="qwen_config" />
+
+<Label>The subtle switch</Label>
+
+## Which channels rotate together
+
+[The RoPE post](/posts/rope/) rotates channel pairs by an angle that grows with position. Octlm paired neighbors, channel 0 with 1, 2 with 3 and so on. Hugging Face's Qwen code pairs the first half with the second half, channel 0 with {q.head_size / 2}, 1 with {q.head_size / 2 + 1}. Both are valid RoPE. But Qwen's query and key weights were trained with split halves. Load those weights and rotate with the other layout, and every angle is correct while the wrong channels get rotated together. The model would produce fluent-looking garbage.
+
+<Figure label="Playground" caption="One 8-channel head. Switch the layout and watch the score drift away from what the trained weights expect. Switch the base to see how slowly the last pair turns.">
+  <RopeLayouts client:visible />
+</Figure>
+
+The split version is three lines in `apply_rope`, and the cached path shares it, so generation got it for free. A parity test checks the JavaScript port above against the Python function.
+
+<Label>Reading the file</Label>
+
+## A safetensors file is a JSON header and raw bytes
+
+The weights ship as one {gib} GiB `model.safetensors` file. The format is simple enough to parse with the standard library:
+
+1. The first 8 bytes are a little-endian integer, the header length.
+2. The next {n(qwen.header_bytes - 8)} bytes are JSON. For each tensor it lists a dtype, a shape and a start and end offset.
+3. Everything after that is raw tensor bytes, packed back to back.
+
+<Figure label="Playground" caption={`All ${qwen.tensors.length} tensors of the real checkpoint. Pick a layer and a row to see where its bytes sit in the file.`}>
+  <SafetensorsMap client:visible fileBytes={qwen.file_bytes} headerBytes={qwen.header_bytes} tensors={qwen.tensors} layers={q.n_layers} />
+</Figure>
+
+`read_header` doesn't trust the file. It rejects a header length larger than the file, duplicate JSON keys, unknown dtypes, a byte count that doesn't match the shape, and offsets that overlap, leave a gap or fail to cover the payload. A truncated download or a corrupt file fails here, before any tensor reaches the model.
+
+<Source file="octlm/day6.py" symbol="read_header" />
+
+<Label>Loading without doubling memory</Label>
+
+## Build empty, then stream one tensor at a time
+
+A naive loader builds the model with random weights, reads the whole file into a dictionary, then copies. That holds two full copies in memory. Octlm builds the model on PyTorch's `meta` device, which records shapes and allocates nothing. `to_empty()` allocates real storage once, and the generator hands over one tensor at a time. Each tensor gets its name mapped, its shape checked and its values copied, then it's freed.
+
+<Source file="octlm/day6.py" symbol="load_qwen" />
+
+## Two things the real file taught us
+
+**The duplicate output matrix.** The config says the input embedding and output matrix are tied, one shared matrix. The file still stores both `model.embed_tokens.weight` and `lm_head.weight`, {n(qwen.tensors.length)} entries instead of {n(qwen.tensors.length - 1)}. A tiny random test model had omitted the duplicate, so only the real download exposed this. The loader now accepts the duplicate and fails if the two copies differ.
+
+**A mask nobody used.** Octlm's attention layer used to store a square causal mask at the full context length, even for SDPA, which never reads it. At Qwen's {n(q.context_length)} positions that's about 1.68 GB per layer. The layer now keeps a one-element placeholder for full SDPA and builds masks only for the attention types that need them. This is a loading fix, not a speed claim.
+
+<Label>Result</Label>
+
+## Everything arrives, nothing extra
+
+The pinned snapshot loads all {qwen.tensors.length} BF16 entries into {n(env.parameters)} unique parameters. Config, tokenizer and weight hashes pass before any tensor is read, and a forward pass runs. The same load ran on the laptop and on the Kaggle T4.
+
+What this doesn't prove is that the numbers come out right. A single wrong transpose would still load without an error. That's the next post.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **Sharded checkpoints.** Larger Qwen models split weights across several files with an index. The 0.6B model is one file, so the loader reads one.
+- **Qwen3.5.** The newer small Qwen mixes a different layer type (Gated DeltaNet) into the stack. That would be a second architecture, not a switch, so the plan's Qwen3 fallback won.
+- **BF16 compute.** The file is BF16. The laptop runs float32 and the T4 runs float16, because the T4 has no BF16 hardware.
+
+<Callout hue="gray" title="Sources">
+  <p>The <a href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/config.json">pinned config.json</a> supplies every architecture number above. The <a href="https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/qwen3/modeling_qwen3.py">Transformers 4.57.6 Qwen3 source</a> shows QK-norm before RoPE and the split-half rotation. The <a href="https://github.com/huggingface/safetensors#format">safetensors format</a> defines the header layout. The tensor map comes from the real checkpoint header, and the decisions are in <code>notes/day6.md</code>.</p>
+</Callout>

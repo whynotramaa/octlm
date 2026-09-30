@@ -1,0 +1,94 @@
+---
+title: Speaking Qwen's language
+description: "Right weights with wrong token IDs still give garbage. Octlm loads Qwen's own tokenizer, keeps literal control strings from turning into commands, and renders the native chat template character for character, tool calls and thinking mode included."
+day: 6
+order: 3
+exps: ["EXP-075"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import TemplateView from "../../widgets/TemplateView.tsx";
+import t4 from "../../data/runs/day6-t4.json";
+
+export const templates = t4.filter((row) => row.type === "template_parity");
+export const encoded = t4.filter((row) => row.type === "tokenizer_parity");
+export const differing = encoded.filter((row) => row.ids.join() !== row.native_ids.join()).length;
+
+A model only understands the token IDs it was trained on. Give Qwen the right weights and our Day 4 tokenizer, and "Once upon a time" becomes a list of numbers that mean something else entirely to it. So Day 6 needs Qwen's exact tokenizer, and the exact text format its post-training used for chat.
+
+<Figure label="Playground" caption="Real output from the T4 run. The chat view shows the text octlm renders for each test conversation. The tokenizer view compares the two encoding modes octlm keeps.">
+  <TemplateView client:visible templates={templates} encoded={encoded} chats={["One user turn", "System + user", "Tool call"]} />
+</Figure>
+
+<Label>Which tokenizer</Label>
+
+## Load Qwen's tokenizer, don't rebuild it
+
+[Day 1's BPE](/posts/byte-level-bpe/) learns merges from our own data, and `AGENTS.md` requires that for models we train. Qwen is the exception. Its vocabulary of 151,936 entries ships with its weights in `tokenizer.json`, and the weights only make sense with that exact vocabulary.
+
+Could octlm's BPE code read that file? Not without changes. Qwen maps bytes to characters differently, splits text into pre-tokens with a different regex, and handles added tokens its own way. Rewriting all of that would duplicate a tokenizer that already exists. So octlm adds one dependency, Hugging Face's `tokenizers` package, which loads `tokenizer.json` directly. The plan allowed either route and said to decide by exact ID match.
+
+<Label>A safety rule</Label>
+
+## Ordinary text must never become a command
+
+Qwen marks conversation structure with added tokens such as `<|im_start|>`, `<|im_end|>` and `<|endoftext|>`. Each has a single ID. By default, the tokenizer turns the literal text `<|im_end|>` into that ID wherever it appears.
+
+That's a problem for a harness. Suppose a file the model reads contains the string `<|im_end|>`. Encoded the default way, the model would see a real end-of-turn marker in the middle of a tool result. A user could end the model's turn or fake a new one just by writing those characters. So octlm keeps two modes:
+
+- **Literal**, for any text that comes from outside: files, tool output, user messages. Control strings split into ordinary characters.
+- **Native**, only for text octlm rendered itself from the trusted chat template. Control strings become their single IDs.
+
+Case 4 in the playground shows the difference. The same string gives {encoded[3].ids.length} IDs in literal mode and {encoded[3].native_ids.length} in native mode, because the three tags collapse into three control IDs.
+
+<Source file="octlm/day6.py" symbol="QwenTokenizer" />
+
+<Label>A conflict we had to record</Label>
+
+## Qwen's tokenizer changes your text
+
+The real `tokenizer.json` contains an NFC normalizer. NFC merges a letter followed by a combining accent into one precomposed character. So `cafe` plus a combining acute accent (two code points at the end) becomes `café` with one code point. The IDs match Qwen's reference, but decoding no longer gives back the exact input.
+
+`AGENTS.md` says never to normalize Unicode. Exact input text matters in code, where two strings that look the same can differ. But Qwen was trained with NFC, so native encoding has to keep it. Octlm doesn't edit the file. The literal mode turns normalization off and round-trips every test string exactly, while the native mode keeps NFC for template text. Each mode is compared against a reference configured the same way.
+
+In the playground, {differing} of the {encoded.length} test strings give different IDs in the two modes: case 3 because of the accent, case 4 because of the control strings.
+
+<Label>The chat template</Label>
+
+## Render Qwen's own template, exactly
+
+A chat model expects its conversation in the exact layout it saw in post-training. Qwen's `tokenizer_config.json` ships that layout as a Jinja template, a small program that turns a list of messages into one string. It handles the system prompt, the tool list, tool calls and results, and the thinking switch.
+
+Octlm renders that same template instead of writing its own chat format. It uses Jinja2's sandboxed environment, because a template is code shipped inside a downloaded file, and the sandbox blocks it from reaching Python internals. Two settings match what Transformers does. A `tojson` filter keeps non-ASCII characters, and the loop-control extension lets templates use `break` and `continue`.
+
+Thinking mode is the most visible switch. With thinking on, the prompt ends at `<|im_start|>assistant`, and the model may write its reasoning inside `<think>` tags before answering. With thinking off, the template adds an empty `<think></think>` block, so the model skips straight to the answer.
+
+<Label>Result</Label>
+
+## Every ID and every character matches
+
+| Check | Cases | Result |
+| --- | ---: | --- |
+| Literal encoding against a reference with normalization off and special splitting on | {encoded.length} | identical IDs, exact round trip |
+| Native encoding against the default reference | {encoded.length} | identical IDs |
+| Rendered chat text against `apply_chat_template` | {templates.length} | identical characters |
+| Chat token IDs | {templates.length} | identical IDs |
+
+The test strings cover tabs, indentation, CRLF, a NUL byte, emoji with a skin-tone modifier, a combining accent, Japanese, Russian and literal control strings. The conversations cover one user turn, a system prompt, and a full tool call with its result, each with thinking on and off. Octlm and Transformers matched on both the laptop and the T4.
+
+Decision: keep the `tokenizers` dependency and both modes. Day 7 must encode every tool result in literal mode.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **A generic chat renderer.** Octlm renders only the template shipped with the model. Another model family would bring its own.
+- **Octlm's BPE reading `tokenizer.json`.** Possible, but it would copy a tokenizer that already exists, for no measured gain.
+- **Template error messages.** Qwen's template never calls `raise_exception`. A template that does would fail with a Jinja error instead of its own message.
+
+<Callout hue="gray" title="Sources">
+  <p>The <a href="https://huggingface.co/docs/tokenizers/api/tokenizer">Tokenizers API</a> loads <code>tokenizer.json</code>. The <a href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/tokenizer_config.json">pinned tokenizer config</a> holds the chat template. The <a href="https://huggingface.co/docs/transformers/chat_templating">chat template guide</a> describes rendering and thinking mode, and the <a href="https://jinja.palletsprojects.com/en/stable/sandbox/">Jinja sandbox documentation</a> describes what the sandbox blocks. Every case shown comes from <code>runs/kaggle-day6/day6/results.jsonl</code>, and the normalization conflict is recorded in <code>notes/day6.md</code>.</p>
+</Callout>

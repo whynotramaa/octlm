@@ -10,7 +10,7 @@ import { toBfloat16, toFloat16 } from "../src/lib/floats.ts";
 import { quantizeRow, seedSpread } from "../src/lib/day5.ts";
 import { hiddenSize, kvCacheBytes, parameterCount } from "../src/lib/model.ts";
 import { tiledAttention } from "../src/lib/online-softmax.ts";
-import { applyRope, ropeAngles, ropeTables, sinusoidal } from "../src/lib/positions.ts";
+import { applyRope, applyRopeSplit, ropeAngles, ropeTables, sinusoidal } from "../src/lib/positions.ts";
 import { pretokenize } from "../src/lib/pretokenize.ts";
 import { samplingDistribution } from "../src/lib/sampling.ts";
 import { learningRate } from "../src/lib/schedule.ts";
@@ -139,4 +139,9 @@ test("completed Day 5 MTP uses all matched seeds and the frozen threshold", () =
   const baseline = seedSpread(controls.filter((row: any) => row.variant === "baseline").map((row: any) => row.bits_per_byte));
   assert.ok(seedSpread(mtp.map((row: any) => row.bits_per_byte)).mean - modern.mean > Math.max(modern.spread, baseline.spread));
   assert.ok(roadmap().find((day) => day.day === 5)?.experiments.every((exp) => exp.status === "done"));
+});
+
+test("split-half RoPE with base 1e6 matches apply_rope(split=True)", () => {
+  const f = fixture("day6");
+  close(applyRopeSplit(f.x, ropeAngles(16, 8, 1, f.base)), f.rotated);
 });

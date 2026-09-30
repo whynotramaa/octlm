@@ -39,7 +39,7 @@ This series follows the build in the order it happened. Day 0 is this post and t
 The plan has three stages.
 
 1. Write a decoder from scratch, around 20 million parameters, and train it on children's stories until it writes coherent ones.
-2. Load Qwen, a real open model, into the same code and check that it gives the same logits as the reference implementation.
+2. Load Qwen, a real open model, into the same code and [check that it gives the same logits](/posts/logit-parity/) as the reference implementation. Done on Day 6.
 3. Fine-tune Qwen with LoRA, written inside octlm, so it emits tool calls, and build a harness that runs it against a fixed set of tasks.
 
 The first stage proves the internals. The second proves they're the same internals a production model uses. The third gives us something we can measure on top of them. The plan used to be way bigger, and [why the plan changed](/posts/why-the-plan-changed/) covers what got cut and why.
