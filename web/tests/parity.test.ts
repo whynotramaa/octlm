@@ -8,6 +8,7 @@ import { attentionMask, compressedMask, maskDensity } from "../src/lib/masks.ts"
 import { type Matrix, maxAbsDifference } from "../src/lib/matrix.ts";
 import { toBfloat16, toFloat16 } from "../src/lib/floats.ts";
 import { quantizeRow, seedSpread } from "../src/lib/day5.ts";
+import { answerMatches, parseCalls, passHat, schemasOf } from "../src/lib/harness.ts";
 import { hiddenSize, kvCacheBytes, parameterCount } from "../src/lib/model.ts";
 import { tiledAttention } from "../src/lib/online-softmax.ts";
 import { applyRope, applyRopeSplit, ropeAngles, ropeTables, sinusoidal } from "../src/lib/positions.ts";
@@ -144,4 +145,27 @@ test("completed Day 5 MTP uses all matched seeds and the frozen threshold", () =
 test("split-half RoPE with base 1e6 matches apply_rope(split=True)", () => {
   const f = fixture("day6");
   close(applyRopeSplit(f.x, ropeAngles(16, 8, 1, f.base)), f.rotated);
+});
+
+test("Day 7 parser, answer check and pass^k match octlm.harness", () => {
+  const f = fixture("day7");
+  const data = JSON.parse(readFileSync(new URL("../src/data/day7.json", import.meta.url), "utf-8"));
+  const schemas = schemasOf(data.tools);
+  const json = "error: tool call is not valid JSON";
+  const shape = (call: unknown) => (typeof call === "string" && call.startsWith(json) ? json : call);
+  for (const { text, calls } of f.parse) assert.deepEqual(parseCalls(text, schemas).map(shape), calls.map(shape), text);
+  for (const { expected, answer, match } of f.answers) assert.equal(answerMatches(expected, answer), match, answer);
+  for (const { successes, trials, k, value } of f.pass_hat) assert.ok(Math.abs(passHat(successes, trials, k) - value) < 1e-12);
+});
+
+test("published Day 7 baseline matches its own runs", () => {
+  const rows = JSON.parse(readFileSync(new URL("../src/data/runs/day7-eval.json", import.meta.url), "utf-8"));
+  const runs = rows.filter((row: any) => row.type === "day7_run");
+  const summary = rows.at(-1);
+  assert.equal(runs.length, 120);
+  const tasks = [...new Set(runs.map((row: any) => row.task))];
+  const successes = tasks.map((task) => runs.filter((row: any) => row.task === task && row.success).length);
+  assert.ok(Math.abs(passHat(successes, 3, 1) - summary.pass_1_mean) < 1e-12);
+  assert.equal(passHat(successes, 3, 3), summary.pass_hat_3);
+  assert.ok(roadmap().find((day) => day.day === 7)?.experiments.every((exp) => exp.status === "done"));
 });

@@ -335,3 +335,14 @@ mark.repeat:hover { background: color-mix(in oklch, var(--series-2) 40%, transpa
 .template-text { font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-chip); padding: 12px 14px; max-height: 360px; overflow: auto; margin: 0; }
 .template-text mark { background: color-mix(in oklch, var(--series-2) 18%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
 .data-table tbody tr.pick { cursor: pointer; }
+.prefix-text .reused { color: var(--ink-3); }
+.run-grid { display: grid; gap: 3px; align-items: center; font-family: var(--font-mono); font-size: 11px; min-width: max-content; padding: 2px; }
+.run-kind { color: var(--ink-3); white-space: nowrap; overflow: visible; width: 14px; }
+.run-seed { color: var(--ink-3); }
+.run-cell { width: 14px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
+.run-cell:hover { transform: translateY(-1px); }
+.run-cell.pass { background: oklch(64% 0.15 var(--hue-green)); border-color: transparent; }
+.run-cell.tried { background: color-mix(in oklch, oklch(68% 0.15 var(--hue-orange)) 55%, var(--surface)); }
+.run-cell.flipped { outline: 2px dashed var(--series-2); outline-offset: 1px; }
+.run-cell.on { box-shadow: 0 0 0 3px color-mix(in oklch, var(--series-1) 35%, transparent); }
+.swatch.run-cell { display: inline-block; width: 12px; height: 12px; cursor: default; vertical-align: middle; }

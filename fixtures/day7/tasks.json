@@ -1,0 +1,983 @@
+[
+ {
+  "id": "port",
+  "prompt": "Which port does the server use according to the config? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "8042"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/settings.ini"
+     }
+    }
+   ],
+   "answer": "8042"
+  }
+ },
+ {
+  "id": "db-name",
+  "prompt": "What is the database name in the config? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "shop_main"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/settings.ini"
+     }
+    }
+   ],
+   "answer": "shop_main"
+  }
+ },
+ {
+  "id": "db-timeout",
+  "prompt": "What is the database timeout in the config? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "45"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/settings.ini"
+     }
+    }
+   ],
+   "answer": "45"
+  }
+ },
+ {
+  "id": "version",
+  "prompt": "What version is the shop package? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "1.4.2"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "VERSION"
+     }
+    }
+   ],
+   "answer": "1.4.2"
+  }
+ },
+ {
+  "id": "tax-rate",
+  "prompt": "What is the default tax rate in the pricing module? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "0.08"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "shop/pricing.py"
+     }
+    }
+   ],
+   "answer": "0.08"
+  }
+ },
+ {
+  "id": "customer-count",
+  "prompt": "How many customers are listed in data/customers.csv, not counting the header? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "7",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/customers.csv"
+     }
+    }
+   ],
+   "answer": "7"
+  }
+ },
+ {
+  "id": "customer-city",
+  "prompt": "Which city does the customer with id 4 live in? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Lisbon"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/customers.csv"
+     }
+    }
+   ],
+   "answer": "Lisbon"
+  }
+ },
+ {
+  "id": "low-stock-file",
+  "prompt": "Which file defines the function low_stock? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "inventory.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def low_stock"
+     }
+    }
+   ],
+   "answer": "shop/inventory.py"
+  }
+ },
+ {
+  "id": "low-stock-default",
+  "prompt": "What is the default threshold of low_stock? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "5"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "shop/inventory.py"
+     }
+    }
+   ],
+   "answer": "5"
+  }
+ },
+ {
+  "id": "lamp-stock",
+  "prompt": "How many lamps are in stock according to the inventory module? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "12"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "shop/inventory.py"
+     }
+    }
+   ],
+   "answer": "12"
+  }
+ },
+ {
+  "id": "round-money-user",
+  "prompt": "Which module other than pricing imports round_money? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "cart"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "import round_money"
+     }
+    }
+   ],
+   "answer": "shop/cart.py"
+  }
+ },
+ {
+  "id": "test-files",
+  "prompt": "How many test_*.py files are in the tests directory? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "4",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "list_files",
+     "arguments": {
+      "path": "tests"
+     }
+    }
+   ],
+   "answer": "4"
+  }
+ },
+ {
+  "id": "license",
+  "prompt": "Which license does the README name? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Apache-2.0"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "README.md"
+     }
+    }
+   ],
+   "answer": "Apache-2.0"
+  }
+ },
+ {
+  "id": "maintainer",
+  "prompt": "Who maintains this project according to the README? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Rina Okafor"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "README.md"
+     }
+    }
+   ],
+   "answer": "Rina Okafor"
+  }
+ },
+ {
+  "id": "set-port",
+  "prompt": "Change the server port in config/settings.ini to 9090.",
+  "check": {
+   "kind": "file",
+   "path": "config/settings.ini",
+   "pattern": "port\\s*=\\s*9090\\b",
+   "keep": [
+    "host = 127.0.0.1",
+    "name = shop_main"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/settings.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 9090\n\n[database]\nname = shop_main\ntimeout = 45\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "set-host",
+  "prompt": "Make the server listen on 0.0.0.0 in config/settings.ini.",
+  "check": {
+   "kind": "file",
+   "path": "config/settings.ini",
+   "pattern": "host\\s*=\\s*0\\.0\\.0\\.0\\b",
+   "keep": [
+    "port = 8042",
+    "name = shop_main"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/settings.ini",
+      "content": "[server]\nhost = 0.0.0.0\nport = 8042\n\n[database]\nname = shop_main\ntimeout = 45\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "set-db-name",
+  "prompt": "Rename the database in config/settings.ini to shop_test.",
+  "check": {
+   "kind": "file",
+   "path": "config/settings.ini",
+   "pattern": "name\\s*=\\s*shop_test\\b",
+   "keep": [
+    "port = 8042",
+    "timeout = 45"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/settings.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 8042\n\n[database]\nname = shop_test\ntimeout = 45\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "bump-version",
+  "prompt": "Bump the package version in shop/__init__.py to 1.5.0.",
+  "check": {
+   "kind": "file",
+   "path": "shop/__init__.py",
+   "pattern": "VERSION\\s*=\\s*[\\\"']1\\.5\\.0[\\\"']",
+   "keep": []
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/__init__.py",
+      "content": "VERSION = \"1.5.0\"\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "add-customer",
+  "prompt": "Add a customer with id 8, name Hana, city Osaka to data/customers.csv.",
+  "check": {
+   "kind": "file",
+   "path": "data/customers.csv",
+   "pattern": "(?m)^8,Hana,Osaka$",
+   "keep": [
+    "1,Ada,Leeds",
+    "7,Gita,Pune"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "data/customers.csv",
+      "content": "id,name,city\n1,Ada,Leeds\n2,Bao,Hanoi\n3,Chidi,Lagos\n4,Dana,Lisbon\n5,Emre,Izmir\n6,Femi,Accra\n7,Gita,Pune\n8,Hana,Osaka\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "add-desk",
+  "prompt": "Add a desk with 3 units to STOCK in shop/inventory.py.",
+  "check": {
+   "kind": "file",
+   "path": "shop/inventory.py",
+   "pattern": "[\\\"']desk[\\\"']\\s*:\\s*3\\b",
+   "keep": [
+    "\"lamp\": 12",
+    "def low_stock"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/inventory.py",
+      "content": "STOCK = {\"lamp\": 12, \"chair\": 4, \"table\": 0, \"mug\": 30, \"desk\": 3}\n\n\ndef in_stock(name):\n    return STOCK.get(name, 0) > 0\n\n\ndef restock(name, count):\n    STOCK[name] = STOCK.get(name, 0) + count\n    return STOCK[name]\n\n\ndef low_stock(threshold=5):\n    return sorted(name for name, count in STOCK.items() if count < threshold)\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "todo-file",
+  "prompt": "Create notes/todo.txt containing the line: ship v2",
+  "check": {
+   "kind": "file",
+   "path": "notes/todo.txt",
+   "pattern": "ship v2",
+   "keep": []
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "notes/todo.txt",
+      "content": "ship v2\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "changelog",
+  "prompt": "Create CHANGELOG.md whose first line is the heading # Changelog.",
+  "check": {
+   "kind": "file",
+   "path": "CHANGELOG.md",
+   "pattern": "\\A# Changelog",
+   "keep": []
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "CHANGELOG.md",
+      "content": "# Changelog\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "contributing",
+  "prompt": "Add a Contributing section heading to README.md.",
+  "check": {
+   "kind": "file",
+   "path": "README.md",
+   "pattern": "(?m)^#+ Contributing",
+   "keep": [
+    "License: Apache-2.0"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "README.md",
+      "content": "# shop\n\nA small shop library: prices, carts, stock, and text helpers.\n\nRun the tests with `python -m unittest discover -s tests -t .`.\n\nLicense: Apache-2.0\nMaintainer: Rina Okafor\n\n## Contributing\n\nOpen a pull request.\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "clamp",
+  "prompt": "Add a function clamp(value, low, high) to shop/pricing.py that limits value to the range from low to high. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_clamp.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/pricing.py",
+      "content": "TAX_RATE = 0.08\n\n\ndef round_money(amount):\n    return round(amount, 2)\n\n\ndef apply_discount(price, percent):\n    return round_money(price * (1 - percent / 100))\n\n\ndef add_tax(price, rate=TAX_RATE):\n    return round_money(price * (1 + rate))\n\n\ndef clamp(value, low, high):\n    return max(low, min(value, high))\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "percent-off",
+  "prompt": "Add a function percent_off(original, sale) to shop/pricing.py that returns the discount as a percentage of the original price, for example 25.0 for 100.0 and 75.0. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_percent_off.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/pricing.py",
+      "content": "TAX_RATE = 0.08\n\n\ndef round_money(amount):\n    return round(amount, 2)\n\n\ndef apply_discount(price, percent):\n    return round_money(price * (1 - percent / 100))\n\n\ndef add_tax(price, rate=TAX_RATE):\n    return round_money(price * (1 + rate))\n\n\ndef percent_off(original, sale):\n    return round_money((original - sale) / original * 100)\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "cart-clear",
+  "prompt": "Add a clear() method to Cart in shop/cart.py that removes every item. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_cart_clear.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/cart.py",
+      "content": "from shop.pricing import round_money\n\n\nclass Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        if quantity < 1:\n            raise ValueError(\"quantity must be positive\")\n        _, held = self.items.get(name, (price, 0))\n        self.items[name] = (price, held + quantity)\n\n    def remove(self, name):\n        self.items.pop(name, None)\n\n    def item_count(self):\n        return sum(quantity for _, quantity in self.items.values())\n\n    def total(self):\n        return round_money(sum(price * quantity for price, quantity in self.items.values()))\n\n    def clear(self):\n        self.items.clear()\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "cart-has",
+  "prompt": "Add a has(name) method to Cart in shop/cart.py that returns whether the cart holds that item. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_cart_has.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/cart.py",
+      "content": "from shop.pricing import round_money\n\n\nclass Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        if quantity < 1:\n            raise ValueError(\"quantity must be positive\")\n        _, held = self.items.get(name, (price, 0))\n        self.items[name] = (price, held + quantity)\n\n    def remove(self, name):\n        self.items.pop(name, None)\n\n    def item_count(self):\n        return sum(quantity for _, quantity in self.items.values())\n\n    def total(self):\n        return round_money(sum(price * quantity for price, quantity in self.items.values()))\n\n    def has(self, name):\n        return name in self.items\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "count-words",
+  "prompt": "Add a function count_words(text) to shop/text.py that returns the number of whitespace-separated words. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_count_words.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/text.py",
+      "content": "import re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n\n\ndef title_case(text):\n    return \" \".join(word.capitalize() for word in text.split())\n\n\ndef truncate(text, limit):\n    if len(text) <= limit:\n        return text\n    return text[: limit - 3] + \"...\"\n\n\ndef count_words(text):\n    return len(text.split())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "reverse-words",
+  "prompt": "Add a function reverse_words(text) to shop/text.py that returns the words in reverse order, joined by single spaces. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_reverse_words.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/text.py",
+      "content": "import re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n\n\ndef title_case(text):\n    return \" \".join(word.capitalize() for word in text.split())\n\n\ndef truncate(text, limit):\n    if len(text) <= limit:\n        return text\n    return text[: limit - 3] + \"...\"\n\n\ndef reverse_words(text):\n    return \" \".join(reversed(text.split()))\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "total-stock",
+  "prompt": "Add a function total_stock() to shop/inventory.py that returns the sum of all counts in STOCK. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_total_stock.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/inventory.py",
+      "content": "STOCK = {\"lamp\": 12, \"chair\": 4, \"table\": 0, \"mug\": 30}\n\n\ndef in_stock(name):\n    return STOCK.get(name, 0) > 0\n\n\ndef restock(name, count):\n    STOCK[name] = STOCK.get(name, 0) + count\n    return STOCK[name]\n\n\ndef low_stock(threshold=5):\n    return sorted(name for name, count in STOCK.items() if count < threshold)\n\n\ndef total_stock():\n    return sum(STOCK.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "sku",
+  "prompt": "Create shop/sku.py with a function is_valid_sku(sku) that returns True only for three uppercase letters, a dash, and four digits, such as ABC-1234. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_sku.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/sku.py",
+      "content": "import re\n\n\ndef is_valid_sku(sku):\n    return re.fullmatch(r\"[A-Z]{3}-[0-9]{4}\", sku) is not None\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "bug-discount",
+  "prompt": "apply_discount returns wrong prices. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/pricing.py",
+    "old": "percent / 100",
+    "new": "percent / 10"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/pricing.py",
+      "content": "TAX_RATE = 0.08\n\n\ndef round_money(amount):\n    return round(amount, 2)\n\n\ndef apply_discount(price, percent):\n    return round_money(price * (1 - percent / 100))\n\n\ndef add_tax(price, rate=TAX_RATE):\n    return round_money(price * (1 + rate))\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-round",
+  "prompt": "Money amounts lose a decimal place. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/pricing.py",
+    "old": "round(amount, 2)",
+    "new": "round(amount, 1)"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/pricing.py",
+      "content": "TAX_RATE = 0.08\n\n\ndef round_money(amount):\n    return round(amount, 2)\n\n\ndef apply_discount(price, percent):\n    return round_money(price * (1 - percent / 100))\n\n\ndef add_tax(price, rate=TAX_RATE):\n    return round_money(price * (1 + rate))\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-cart-total",
+  "prompt": "Cart totals are wrong when an item has a quantity above one. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/cart.py",
+    "old": "sum(price * quantity for",
+    "new": "sum(price for"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/cart.py",
+      "content": "from shop.pricing import round_money\n\n\nclass Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        if quantity < 1:\n            raise ValueError(\"quantity must be positive\")\n        _, held = self.items.get(name, (price, 0))\n        self.items[name] = (price, held + quantity)\n\n    def remove(self, name):\n        self.items.pop(name, None)\n\n    def item_count(self):\n        return sum(quantity for _, quantity in self.items.values())\n\n    def total(self):\n        return round_money(sum(price * quantity for price, quantity in self.items.values()))\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-in-stock",
+  "prompt": "in_stock reports items with zero units as available. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/inventory.py",
+    "old": "STOCK.get(name, 0) > 0",
+    "new": "STOCK.get(name, 0) >= 0"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/inventory.py",
+      "content": "STOCK = {\"lamp\": 12, \"chair\": 4, \"table\": 0, \"mug\": 30}\n\n\ndef in_stock(name):\n    return STOCK.get(name, 0) > 0\n\n\ndef restock(name, count):\n    STOCK[name] = STOCK.get(name, 0) + count\n    return STOCK[name]\n\n\ndef low_stock(threshold=5):\n    return sorted(name for name, count in STOCK.items() if count < threshold)\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-restock",
+  "prompt": "restock lowers the stock count. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/inventory.py",
+    "old": "STOCK.get(name, 0) + count",
+    "new": "STOCK.get(name, 0) - count"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/inventory.py",
+      "content": "STOCK = {\"lamp\": 12, \"chair\": 4, \"table\": 0, \"mug\": 30}\n\n\ndef in_stock(name):\n    return STOCK.get(name, 0) > 0\n\n\ndef restock(name, count):\n    STOCK[name] = STOCK.get(name, 0) + count\n    return STOCK[name]\n\n\ndef low_stock(threshold=5):\n    return sorted(name for name, count in STOCK.items() if count < threshold)\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-low-stock",
+  "prompt": "low_stock lists the wrong items. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/inventory.py",
+    "old": "count < threshold",
+    "new": "count > threshold"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/inventory.py",
+      "content": "STOCK = {\"lamp\": 12, \"chair\": 4, \"table\": 0, \"mug\": 30}\n\n\ndef in_stock(name):\n    return STOCK.get(name, 0) > 0\n\n\ndef restock(name, count):\n    STOCK[name] = STOCK.get(name, 0) + count\n    return STOCK[name]\n\n\ndef low_stock(threshold=5):\n    return sorted(name for name, count in STOCK.items() if count < threshold)\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-slugify",
+  "prompt": "slugify drops capital letters. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/text.py",
+    "old": "text.lower()",
+    "new": "text"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/text.py",
+      "content": "import re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n\n\ndef title_case(text):\n    return \" \".join(word.capitalize() for word in text.split())\n\n\ndef truncate(text, limit):\n    if len(text) <= limit:\n        return text\n    return text[: limit - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-title-case",
+  "prompt": "title_case shouts every word. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/text.py",
+    "old": "word.capitalize()",
+    "new": "word.upper()"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/text.py",
+      "content": "import re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n\n\ndef title_case(text):\n    return \" \".join(word.capitalize() for word in text.split())\n\n\ndef truncate(text, limit):\n    if len(text) <= limit:\n        return text\n    return text[: limit - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "bug-truncate",
+  "prompt": "truncate returns text that is too long. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "shop/text.py",
+    "old": "limit - 3",
+    "new": "limit - 2"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "shop/text.py",
+      "content": "import re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n\n\ndef title_case(text):\n    return \" \".join(word.capitalize() for word in text.split())\n\n\ndef truncate(text, limit):\n    if len(text) <= limit:\n        return text\n    return text[: limit - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ }
+]

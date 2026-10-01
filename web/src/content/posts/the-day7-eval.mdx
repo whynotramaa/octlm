@@ -1,0 +1,139 @@
+---
+title: An eval Day 8 has to beat
+description: "Forty tasks in a small fixture repository, each with a check a script can decide, run under three sampling seeds. Run 1 exposed two checks a wrong answer could pass. The fixed v2 checks give stock Qwen3-0.6B its baseline, and it mostly answers without calling a tool."
+day: 7
+order: 3
+exps: ["EXP-079"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import EvalGrid from "../../widgets/EvalGrid.tsx";
+import PassK from "../../widgets/PassK.tsx";
+import day7 from "../../data/day7.json";
+import v1Rows from "../../data/runs/day7-eval-v1.json";
+import v2Rows from "../../data/runs/day7-eval.json";
+import validation from "../../data/runs/day7-validate.json";
+
+export const v1 = v1Rows.filter((row) => row.type === "day7_run");
+export const v2 = v2Rows.filter((row) => row.type === "day7_run");
+export const s1 = v1Rows.at(-1);
+export const s2 = v2Rows.at(-1);
+export const kinds = ["answer", "file", "hidden", "tests"];
+export const byKind = (kind) => day7.tasks.filter((t) => t.check.kind === kind);
+export const example = (kind) => byKind(kind)[0].prompt;
+export const seeds = v2Rows[0].seeds;
+export const successes = day7.tasks.map((t) => v2.filter((r) => r.task === t.id && r.success).length);
+export const checked = validation.filter((row) => row.type === "task_validation");
+export const same = v1.filter((row, i) => JSON.stringify(row.messages) === JSON.stringify(v2[i].messages)).length;
+export const flipped = v1.filter((row, i) => row.success !== v2[i].success);
+export const grounded = v2.filter((row) => row.success && row.calls > 0).length;
+export const lucky = v2.filter((row) => row.success && row.calls === 0);
+export const noCall = v2.filter((row) => row.calls === 0).length;
+export const f3 = (value) => value.toFixed(3);
+
+Day 8 will fine-tune Qwen to use tools. To know whether that worked, we need a fixed test that a script can grade, plus the stock model's score on it. This post builds that test and records the baseline.
+
+<Label>The tasks</Label>
+
+## Forty small jobs in a toy shop
+
+The fixture is a small Python package called `shop`, with prices, a cart, stock counts, text helpers, a config file, a CSV of customers and 12 passing unittest tests. Every task starts from a fresh copy. There are {day7.tasks.length} tasks of four kinds, and each kind has its own check:
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Kind</th><th class="num">Tasks</th><th>Example prompt</th><th>Passes when</th></tr></thead>
+    <tbody>
+      <tr><td>answer</td><td class="num">{byKind("answer").length}</td><td>{example("answer")}</td><td>the final answer contains the expected value as a whole token</td></tr>
+      <tr><td>file</td><td class="num">{byKind("file").length}</td><td>{example("file")}</td><td>the file matches a pattern and keeps the lines it should</td></tr>
+      <tr><td>hidden</td><td class="num">{byKind("hidden").length}</td><td>{example("hidden")}</td><td>a test the model never saw, copied in afterwards, passes</td></tr>
+      <tr><td>tests</td><td class="num">{byKind("tests").length}</td><td>{example("tests")}</td><td>the suite passes and no original test file changed</td></tr>
+    </tbody>
+  </table>
+</div>
+
+Each `tests` task first plants one bug with an exact string replacement, such as `percent / 100` becoming `percent / 10`. The check also requires every original test file to be byte-identical, which blocks the obvious cheat of deleting or weakening the failing test. The `hidden` kind borrows SWE-bench's idea: grade new code with a test the model never sees.
+
+<Label>Checking the checks</Label>
+
+## Every task proves it can fail and pass
+
+A check that always passes, or never can, quietly ruins an eval. SWE-bench runs every task's gold patch before using the task. octlm does the same with a `validate` stage that needs no model. Each task has a reference solution written as tool calls. For every task, `validate` confirms the check fails on the untouched repository. It then runs the reference calls through the real parser and tools, and confirms the check passes. For `answer` tasks it also confirms some tool output contains the answer, except two counting tasks whose answer no tool prints directly.
+
+{checked.filter((row) => row.fails_before && row.passes_after).length} of {checked.length} tasks passed validation, on the laptop and again on Kaggle before each eval.
+
+<Source file="octlm/harness.py" symbol="validate" />
+
+<Label>Seeds</Label>
+
+## Sampling makes one run a coin flip
+
+The harness samples, as Qwen's model card recommends, so the same task can pass on one seed and fail on the next. Each task runs under seeds {seeds.join(", ")}, for {v2.length} runs in all. Two numbers summarize them. pass^1 is the plain success rate. pass^k comes from [tau-bench](https://arxiv.org/abs/2406.12045) and gives the chance that k independent tries all succeed. For a task with c successes in n tries:
+
+$$
+\text{pass}^k = \mathbb{E}_{\text{task}}\left[\frac{\binom{c}{k}}{\binom{n}{k}}\right]
+\qquad
+\text{pass@}k = 1 - \mathbb{E}_{\text{task}}\left[\frac{\binom{n-c}{k}}{\binom{n}{k}}\right]
+$$
+
+pass@k, the HumanEval metric, rewards a model that gets something right once. pass^k rewards one that's reliable. If a fine-tune only makes the model more consistent, pass^k moves first.
+
+<Figure label="Baseline" caption="The baseline's per-task success counts, and both metrics for each k.">
+  <PassK client:visible successes={successes} trials={seeds.length} />
+</Figure>
+
+<Label>Result</Label>
+
+## {noCall} of {v2.length} runs never called a tool
+
+<Figure label="Every run" caption="One cell per run: columns are tasks grouped by kind, rows are seeds. Click a cell to read its prompt and final answer. Switch to v1 to see the three passes the first checks got wrong.">
+  <EvalGrid client:visible tasks={day7.tasks} v1={v1} v2={v2} />
+</Figure>
+
+Asked which port the server uses, the model doesn't read `config/settings.ini`. It replies "{v2.find((r) => r.task === "port").answer}" The config says 8042. It does this on nearly every `answer` and `tests` task. It only uses tools when the prompt names a file to write, and even then most of its code arrives as broken JSON.
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Metric</th><th class="num">Run 1, v1 checks</th><th class="num">Run 2, v2 checks</th></tr></thead>
+    <tbody>
+      <tr><td>pass^1 per seed</td><td class="num">{s1.pass_1_per_seed.map(f3).join(", ")}</td><td class="num">{s2.pass_1_per_seed.map(f3).join(", ")}</td></tr>
+      <tr><td>pass^1 mean</td><td class="num">{f3(s1.pass_1_mean)}</td><td class="num">{f3(s2.pass_1_mean)}</td></tr>
+      <tr><td>Seed standard deviation</td><td class="num">{f3(s1.pass_1_stdev)}</td><td class="num">{f3(s2.pass_1_stdev)}</td></tr>
+      <tr><td>pass^3</td><td class="num">{f3(s1.pass_hat_3)}</td><td class="num">{f3(s2.pass_hat_3)}</td></tr>
+      <tr><td>Valid-call rate</td><td class="num">{f3(s1.valid_call_rate)}</td><td class="num">{f3(s2.valid_call_rate)}</td></tr>
+      <tr><td>Mean turns</td><td class="num">{s1.mean_turns.toFixed(2)}</td><td class="num">{s2.mean_turns.toFixed(2)}</td></tr>
+      {kinds.map((kind) => <tr><td>Success, {kind}</td><td class="num">{f3(s1.success_by_kind[kind])}</td><td class="num">{f3(s2.success_by_kind[kind])}</td></tr>)}
+    </tbody>
+  </table>
+</div>
+
+<Label>The first checks were wrong</Label>
+
+## Read the passing transcripts
+
+Run 1 scored {Math.round(s1.pass_1_mean * v1.length)} passes. Reading those transcripts turned up two bad checks:
+
+- `lamp-stock` passed with "{v1.find((r) => r.task === "lamp-stock" && r.seed === 2).answer}" The answer check tested for a substring, and "123" contains "12".
+- `add-customer` passed twice after the model overwrote `data/customers.csv` with a header and the one new row, deleting the other seven customers. The file check only looked for the new line.
+
+The plan written before the run said the task set freezes, and that any change means a new version and a new run, not an edit. So run 1 stays on record and v2 fixes both. An answer must now match as a whole token: no letter, digit, dot or dash just before it, and no letter, digit, dash or decimal part just after. File edits now also list original lines that have to survive. Run 2 scored the same tasks with the v2 checks. {flipped.length} runs changed from pass to fail.
+
+That comparison is unusually clean. {same} of {v2.length} transcripts in run 2 match run 1 token for token. Fixed seeds reproduce sampled generation across two separate T4 sessions, so the scoring is the only thing that changed.
+
+Even v2 has a known blind spot. {lucky.map((r) => `${r.task} on seed ${r.seed}`).join(", ")} passed without a single tool call. The model guessed a number and happened to be right. Only {grounded} of the {Math.round(s2.pass_1_mean * v2.length)} passes are grounded in a tool result. Every row stores its transcript, so Day 8 can report grounded success next to the raw rate without rerunning anything.
+
+Decision: v2 is the Day 8 baseline. The fine-tuned model has to beat pass^1 {f3(s2.pass_1_mean)} by more than the seed spread of {f3(s2.pass_1_stdev)}, on the same tasks, seeds and limits.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **An LLM judge.** Every check is a script. A judge could grade open-ended answers, but it brings its own biases, and this task set doesn't need one.
+- **A bigger task set.** With {day7.tasks.length} tasks, one task is {f3(1 / day7.tasks.length)} of pass^1, as large as the seed spread. A stronger model would need more tasks to separate small gains.
+- **Training traces.** Day 8 collects them from a separate fixture repository, so eval tasks can't leak into training.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://arxiv.org/abs/2406.12045">tau-bench</a> defines pass^k. <a href="https://arxiv.org/abs/2310.06770">SWE-bench</a> grades with hidden tests and validates each task with its gold patch. The <a href="https://huggingface.co/Qwen/Qwen3-0.6B">Qwen3-0.6B model card</a> gives the sampling advice. Runs are in <code>runs/kaggle-day7/</code> (v1) and <code>runs/kaggle-day7-v2/</code> (v2), tasks in <code>fixtures/day7/tasks.json</code>, and the decisions in <code>notes/day7.md</code>.</p>
+</Callout>

@@ -9,6 +9,15 @@ from octlm.config import ProjectConfig
 from octlm.day2 import VARIANTS, tiled_attention
 from octlm.day5 import Int8Linear, spread
 from octlm.day6 import CHATS, QwenTokenizer, qwen_config, read_header, read_json, weight_names
+from octlm.harness import (
+    SYSTEM,
+    TOOLS,
+    answer_matches,
+    common_prefix,
+    load_tasks,
+    parse_calls,
+    pass_hat,
+)
 from octlm.model import (
     CausalSelfAttention,
     Decoder,
@@ -80,6 +89,8 @@ def export_runs() -> None:
             export_jsonl(source, source.stem)
     export_jsonl(ROOT / "runs/kaggle-day6/day6/results.jsonl", "day6-t4")
     export_jsonl(ROOT / "runs/day6-cpu-parity/results.jsonl", "day6-cpu-parity")
+    export_jsonl(ROOT / "runs/kaggle-day7/day7/eval.jsonl", "day7-eval-v1")
+    export_jsonl(ROOT / "runs/kaggle-day7-v2/day7/eval.jsonl", "day7-eval")
 
 
 def tokenizer_fixture() -> dict:
@@ -347,6 +358,85 @@ def qwen_data() -> dict:
     }
 
 
+PARSE_CASES = (
+    "The server uses port 8080.",
+    '<tool_call>\n{"name": "read_file", "arguments": {"path": "README.md"}}\n</tool_call>',
+    '<tool_call>\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x = 1\ny"}}'
+    "\n</tool_call>",
+    '<tool_call>\n{"name": "write_file", "arguments": {"path": "a.py", "content": "def f(',
+    '<tool_call>\n{"name": "delete_file", "arguments": {"path": "a.py"}}\n</tool_call>',
+    '<tool_call>\n{"name": "grep", "arguments": {"pattern": "x", "limit": "3"}}\n</tool_call>',
+    '<tool_call>\n{"name": "run_tests", "arguments": {}}\n</tool_call>\n'
+    '<tool_call>\n{"name": "read_file", "arguments": {"path": 7}}\n</tool_call>',
+    '<tool_call>["read_file"]</tool_call>',
+    "<tool_call></tool_call>",
+)
+ANSWER_CASES = (
+    ("12", "The number of lamps in stock is 123."),
+    ("12", "There are 12 lamps."),
+    ("1.4.2", "Version 1.4.2."),
+    ("inventory.py", "It is in shop/inventory.py"),
+    ("cart", "shop/cart.py imports it"),
+    ("5", "The timeout is 45"),
+    ("0.08", "The rate is 0.085"),
+    ("Apache-2.0", "The Apache-2.0 license"),
+)
+
+
+def day7_fixture() -> dict:
+    return {
+        "parse": [{"text": text, "calls": parse_calls(text)} for text in PARSE_CASES],
+        "answers": [
+            {"expected": e, "answer": a, "match": answer_matches(e, a)} for e, a in ANSWER_CASES
+        ],
+        "pass_hat": [
+            {"successes": c, "trials": 3, "k": k, "value": pass_hat(c, 3, k)}
+            for c in ([0, 1, 2, 3], [3, 3, 0], [1, 1, 1, 1])
+            for k in (1, 2, 3)
+        ],
+    }
+
+
+def turn_tokens(tokenizer: QwenTokenizer, messages: list[dict]) -> list[dict]:
+    turns, cached = [], []
+    for index, message in enumerate(messages):
+        if message["role"] != "assistant":
+            continue
+        text = tokenizer.chat(messages[:index], tools=TOOLS, thinking=False)
+        prompt = tokenizer.encode(text, allow_special=True)
+        keep = min(common_prefix(cached, prompt), len(prompt) - 1)
+        reused = tokenizer.decode(prompt[:keep])
+        turns.append({"text": text, "reused_chars": len(reused), "rendered": len(prompt), "keep": keep})
+        cached = prompt + tokenizer.encode(message["content"], allow_special=True)
+    return turns
+
+
+def day7_data() -> dict:
+    tokenizer = QwenTokenizer(ROOT / "artifacts/day6/qwen")
+    rows = [json.loads(line) for line in (ROOT / "runs/kaggle-day7-v2/day7/eval.jsonl").open()]
+    runs = [row for row in rows if row["type"] == "day7_run"]
+    traces = []
+    for task, seed in (("todo-file", 0), ("bump-version", 2), ("sku", 1)):
+        run = next(r for r in runs if r["task"] == task and r["seed"] == seed)
+        turns = turn_tokens(tokenizer, run["messages"])
+        rendered = sum(t["rendered"] for t in turns)
+        prefilled = sum(t["rendered"] - t["keep"] for t in turns)
+        if (rendered, prefilled) != (run["rendered_tokens"], run["prefilled_tokens"]):
+            raise RuntimeError(f"token accounting for {task} differs from the recorded run")
+        traces.append({"task": task, "seed": seed, "turns": turns, "messages": run["messages"]})
+    first = tokenizer.encode(
+        tokenizer.chat([{"role": "system", "content": SYSTEM}], tools=TOOLS), allow_special=True
+    )
+    tasks = load_tasks(ROOT / "fixtures/day7/tasks.json")
+    return {
+        "system": SYSTEM,
+        "tools": TOOLS,
+        "system_tokens": len(first),
+        "tasks": [{k: t[k] for k in ("id", "prompt", "check")} for t in tasks],
+        "traces": traces,
+    }
+
+
 def main() -> None:
     export_runs()
     fixtures = WEB / "fixtures"
@@ -362,7 +452,9 @@ def main() -> None:
     write(fixtures / "floats.json", floats_fixture())
     write(fixtures / "day5.json", day5_fixture())
     write(fixtures / "day6.json", day6_fixture())
+    write(fixtures / "day7.json", day7_fixture())
     write(WEB / "src/data/qwen.json", qwen_data())
+    write(WEB / "src/data/day7.json", day7_data())
 
 
 if __name__ == "__main__":

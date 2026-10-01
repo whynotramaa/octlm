@@ -72,8 +72,8 @@ The 150M row is why pretraining stops near 20M.
 
 ## Roadmap
 
-Days 1, 2, 4, 5, and 6 are complete. Day 3a built four variants and stopped before any GPU run. New
-experiment numbers start at EXP-065. EXP-020 through EXP-064 belonged to the first plan and stay
+Days 1, 2, 4, 5, 6, and 7 are complete. Day 3a built four variants and stopped before any GPU
+run. New experiment numbers start at EXP-065. EXP-020 through EXP-064 belonged to the first plan and stay
 retired. `notes/day3.md` maps each one to its new number or to the reason it was dropped.
 
 Each day keeps the method from `AGENTS.md`. Write the problem, hypothesis, baseline, measurement,

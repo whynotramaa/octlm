@@ -1,0 +1,116 @@
+---
+title: The agent loop and a KV cache that survives turns
+description: "The harness renders the conversation, generates until <|im_end|>, runs the tools inside a sandbox and repeats. Qwen's template rewrites past turns, so the cache keeps the longest shared token prefix and prefills only what changed."
+day: 7
+order: 2
+exps: ["EXP-078"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import Flow from "../../widgets/Flow.tsx";
+import PrefixReuse from "../../widgets/PrefixReuse.tsx";
+import day7 from "../../data/day7.json";
+import evalRows from "../../data/runs/day7-eval.json";
+import t4 from "../../data/runs/day6-t4.json";
+
+export const runs = evalRows.filter((row) => row.type === "day7_run");
+export const env = evalRows[0];
+export const summary = evalRows.at(-1);
+export const fraction = (rows) => rows.reduce((s, r) => s + r.prefilled_tokens, 0) / rows.reduce((s, r) => s + r.rendered_tokens, 0);
+export const pct = (value) => `${Math.round(100 * value)} percent`;
+export const multi = runs.filter((r) => r.turns > 1);
+export const long = runs.filter((r) => r.turns >= 3);
+export const decode = t4.filter((r) => r.type === "qwen_generation").map((r) => r.tokens_per_second.toFixed(1));
+export const [turns, perTurn, context, timeout, clipLimit] = env.limits;
+
+[The parser](/posts/tool-calls/) turns text into calls. This post is about everything around it: the loop that alternates between the model and the tools, the sandbox that keeps the tools contained, and a KV cache that carries over from one turn to the next.
+
+<Label>The loop</Label>
+
+## Render, generate, parse, run, repeat
+
+<Figure label="One task" caption="The loop for one task. Click a stage.">
+  <Flow client:visible loop stages={[
+    { name: "Render", shape: "chat template", detail: `The message list goes through Qwen's own template in non-thinking mode. The first prompt is the system prompt, the ${day7.tools.length} tool schemas and the task. The system prompt and schemas alone are ${day7.system_tokens} tokens.` },
+    { name: "Generate", shape: `≤ ${perTurn} tokens`, detail: `Sample with temperature ${env.sampling.temperature}, top-p ${env.sampling.top_p} and top-k ${env.sampling.top_k}, the model card's non-thinking settings. Stop on either end ID from generation_config.json: ${env.stop_ids.join(" or ")}.` },
+    { name: "Parse", shape: "<tool_call> blocks", detail: "No block means this is the final answer, so the task ends. Otherwise every block becomes a call or an error message." },
+    { name: "Run tools", shape: "in a sandbox", detail: `Each call runs against a fresh copy of the fixture repository. Each result is cut to ${clipLimit.toLocaleString("en-US")} characters and added as a tool message.` },
+    { name: "Limits", shape: `${turns} turns`, detail: `The task ends after ${turns} model turns, or when the next prompt plus ${perTurn} new tokens would exceed ${context.toLocaleString("en-US")} tokens.` },
+  ]} />
+</Figure>
+
+The transcript is just a list of messages. Following [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent), there's no hidden state and no persistent shell. Each turn appends to the list, and each tool call runs on its own. That keeps runs easy to replay, and Day 8 can use the transcripts as training data without converting them.
+
+<Source file="octlm/harness.py" symbol="run_task" />
+
+<Label>The sandbox</Label>
+
+## Five tools, one directory
+
+Every path goes through one function. It joins the path to the sandbox root, resolves `..` and symlinks, and refuses anything that lands outside the root. That covers both `../../etc/passwd` and an absolute path. Grep and list skip `__pycache__`.
+
+`run_tests` starts `python -m unittest` in its own process session. Python's `subprocess` timeout only kills the direct child, so a test that starts a process of its own could outlive the {timeout}-second limit. On timeout, the harness kills the whole process group instead.
+
+One more guard follows from Day 6. The rendered conversation gets encoded with Qwen's control tokens switched on, so a file that contained the literal text `<|im_end|>` would turn into a real end-of-turn token. Any tool result containing one of the tokenizer's added-token strings is replaced by an error.
+
+This is path isolation, not a security boundary. `run_tests` executes Python the model wrote. That's why the eval runs on a throwaway Kaggle machine.
+
+<Label>The cache</Label>
+
+## Why appending tokens is wrong
+
+Day 5 built a KV cache for one prompt. A tool loop has many prompts, and each one starts with the previous one. The obvious move is to keep the cache and append each new turn's tokens. Qwen's template makes that wrong.
+
+In non-thinking mode, every generation prompt ends with an empty think block, `<think>\n\n</think>\n\n`. When the same assistant turn later appears in the history, the template renders it without that block. So the history the model would see by appending differs from the history the template produces, and the template is what the model was trained on.
+
+So the harness re-renders the whole conversation every turn and compares token IDs:
+
+$$
+\text{keep} = \min\big(\text{LCP}(\text{cached}, \text{prompt}),\ |\text{prompt}| - 1\big)
+$$
+
+LCP is the length of the longest common prefix. The cache gets cut to `keep` positions, and only the rest is prefilled. The minus one ensures at least one token is prefilled, because the next token's logits come from the last prompt position. [Day 6's parity test](/posts/logit-parity/) already showed that a cache built in two chunks matches a full forward pass, so a cut cache needs no new proof.
+
+<Source file="octlm/harness.py" symbol="generate_turn" />
+
+<Figure label="Real runs" caption="Each turn's rendered prompt. Gray text came from the cache and highlighted text was prefilled. These per-turn numbers were recomputed from the saved transcripts, and their totals match the logged run.">
+  <PrefixReuse client:visible traces={day7.traces} />
+</Figure>
+
+<Label>Result</Label>
+
+## Most of each prompt came from the cache
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Runs</th><th class="num">Count</th><th class="num">Prefilled share of rendered tokens</th></tr></thead>
+    <tbody>
+      <tr><td>All</td><td class="num">{runs.length}</td><td class="num">{fraction(runs).toFixed(2)}</td></tr>
+      <tr><td>Two turns or more</td><td class="num">{multi.length}</td><td class="num">{fraction(multi).toFixed(2)}</td></tr>
+      <tr><td>Three turns or more</td><td class="num">{long.length}</td><td class="num">{fraction(long).toFixed(2)}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+The hypothesis was that tasks of three or more turns would save more than half their prefill. They saved {pct(1 - fraction(long))}. One-turn runs save nothing, since their single prompt is all new. That's why the overall share is so high. The comparison needs no second run, because full prefill is just the sum of rendered prompt lengths, which the harness logs every turn.
+
+The long-run row rests on {long.length} runs, because the stock model rarely takes a second turn. Day 8's fine-tuned model should produce many more.
+
+Generation ran at {summary.generated_tokens_per_second.toFixed(1)} tokens per second on the T4. That includes each turn's prefill, so it sits below [Day 6's](/posts/qwen-generation/) decode-only {decode.join(" and ")}.
+
+Decision: keep prefix reuse.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **Real isolation.** A container or a seccomp jail would contain model-written code. The throwaway VM does the job for now.
+- **Parallel tool calls.** Calls in one turn run in order, which is what Qwen's guide describes.
+- **A cache shared across tasks.** Every task starts with the same system prompt and schemas, so their cache could be computed once and copied. It would save {day7.system_tokens} prefill tokens per task, a small win next to generation time.
+
+<Callout hue="gray" title="Sources">
+  <p>The <a href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/tokenizer_config.json">pinned chat template</a> shows the think-block rendering. <a href="https://github.com/SWE-agent/mini-swe-agent">mini-swe-agent</a> is the model for the linear history and independent actions. <a href="https://docs.python.org/3/library/subprocess.html">Python's subprocess documentation</a> covers timeouts and <code>start_new_session</code>. The <a href="https://huggingface.co/Qwen/Qwen3-0.6B">Qwen3-0.6B model card</a> gives the sampling settings. Measurements come from <code>runs/kaggle-day7-v2/day7/eval.jsonl</code>.</p>
+</Callout>

@@ -31,7 +31,15 @@ Day 5 is complete. EXP-069 trained three seeds of each stack for 98.3M tokens on
 seed spread, but it takes 2.2 times as long per step. EXP-071 and EXP-072 have measured KV-cache and
 int8 results. EXP-070 multi-token prediction loses by 0.0188 bits per byte against the 0.0050 threshold and stays off by default.
 
-Read `notes/day1.md` through `notes/day5.md` for the sources, measurements, decisions, and open
+Day 6 is complete. `octlm/model.py` loads Qwen3-0.6B and matches the Transformers float32 logits
+within 2.65e-4 on a T4, with exact tokenizer, template, and greedy-token parity.
+
+Day 7 is complete. `python -m octlm.harness eval` runs Qwen3-0.6B through a five-tool harness on
+40 fixture tasks with three seeds and writes JSONL. The stock model passes 0.025 of runs, with a
+seed spread of 0.025 and a valid-call rate of 0.333, mostly because it answers without calling a
+tool. That is the Day 8 baseline.
+
+Read `notes/day1.md` through `notes/day7.md` for the sources, measurements, decisions, and open
 checks.
 
 ## Requirements
