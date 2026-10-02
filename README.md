@@ -1,30 +1,91 @@
 # octlm
 
-A small language-model engineering lab. It builds a decoder from scratch and trains it properly at
-about 20M parameters. Then it loads a small Qwen instruct model into the same code, fine-tunes it
-with a LoRA written here, and builds an agent harness that runs the model with tools. Every change
-is measured against a baseline. `PLAN.md` defines the roadmap. `AGENTS.md` defines the working rules.
+A language model built from the first byte, in PyTorch, one measured experiment at a time.
 
-The plan changed on 2026-09-23. The first plan aimed to pretrain 50M to 150M models into a local
-assistant. `notes/day3.md` records why it stopped and where each of its experiments went.
+octlm writes its own tokenizer and decoder, trains a 26M-parameter model from scratch on
+TinyStories, loads Qwen3-0.6B into the same decoder, and teaches it to fix bugs with a LoRA and an
+agent loop written in this repository. Every claim has a baseline, a seed spread, and a JSONL record
+in `runs/`.
 
-## Demo
+**[Read the build log](https://web-opal-pi-96.vercel.app)** · [Roadmap](PLAN.md) ·
+[Day notes](notes/) · [Working rules](AGENTS.md)
 
-The fine-tuned Qwen3-0.6B fixes a failing test through the Day 7 tool harness, using a LoRA written
-in this repository. The same task and seed without the adapter answers without calling a tool and
-fails.
+![The octlm landing page. Stock Qwen3-0.6B passes 3 of 120 agent runs, the octlm LoRA passes 56.](.github/readme/landing.png)
+
+## Results
+
+| Day | What it built | Headline number |
+| --- | --- | --- |
+| 1 | Character and byte-level BPE tokenizers, a decoder, a training loop with exact resume | BPE beats characters by 15.4% in bits per byte |
+| 2 | RoPE, RMSNorm, SwiGLU, grouped-query attention, SDPA, a 7 MB code and prose corpus | Flash SDPA is 10.5x faster than math at 8,192 tokens, on 84x less memory |
+| 3 | Multi-token prediction, sparse, compressed, and latent attention, behind flags | Built and tested, then the plan changed. [Why](notes/day3.md) |
+| 4 | A 26.3M model trained on 393M TinyStories tokens in float16 on one T4 | 0.4839 bits per byte on held-out stories |
+| 5 | Three seeds per stack, multi-token prediction, a KV cache, int8 weights | `modern` beats baseline by 6.8x the seed spread. int8 is 41.7% smaller |
+| 6 | Qwen3-0.6B loaded into `octlm/model.py` from raw safetensors | Logits within 2.65e-4 of Transformers, exact greedy tokens |
+| 7 | A five-tool agent harness and 40 eval tasks | Stock Qwen passes 0.025 of runs |
+| 8 | LoRA from scratch, 74 scripted traces, SFT, merge, int8 | pass^1 rises from 0.025 to 0.467. Valid calls rise above 0.97 |
+| 9 | GRPO on the harness task checks | Running on a Kaggle T4 |
+
+## Watch it run
+
+Qwen3-0.6B with the Day 8 LoRA fixes a failing test through the Day 7 harness. It runs the tests,
+reads the file, writes a fix, and runs the tests again.
 
 ![Qwen3-0.6B with the Day 8 LoRA fixes a bug and runs the tests](web/public/demo/agent-lora.gif)
 
+The same task and seed without the adapter. The stock model answers without calling a tool, which
+is the Day 7 failure mode.
+
 ![The base model answers without a tool call](web/public/demo/agent-base.gif)
 
-The 26M-parameter TinyStories model, trained from scratch here, streams a story token by token.
-Each token is colored by the probability the model gave it.
+The 26M model trained here streams a story. Each token is colored by the probability the model gave
+it.
 
 ![The Day 4 model streams stories colored by token probability](web/public/demo/stories.gif)
 
-Run them yourself. Each needs its weights in `artifacts/`: `day6/qwen` and `day8/adapter-0.pt` for
-the agent, `day4/run.pt` and `day4/bpe.json` for the stories.
+Each recording is one CPU run at seed 0 or 1. It illustrates the measured pass rates in
+[`notes/day8.md`](notes/day8.md). It does not replace them. Replay the full terminal sessions with
+asciinema:
+
+```sh
+asciinema play web/public/demo/agent-lora.cast
+```
+
+## The build log
+
+[`web/`](web/) is an Astro site with 41 posts across nine days. Each post explains one idea from
+zero, shows the math, gives an interactive widget, and reads its numbers from `runs/` at build time.
+TypeScript ports in `web/src/lib/` pass parity tests against the Python code.
+
+![The nine-day journey, from raw bytes to an agent that fixes bugs](.github/readme/journey.png)
+
+![The Day 4 model spec sheet and its loss curve over 24,000 steps](.github/readme/curve.png)
+
+![The LoRA parameter counter from the LoRA from scratch post](.github/readme/lora-widget.png)
+
+## Quick start
+
+You need Python 3.14 (pinned in `.python-version`) and [uv](https://docs.astral.sh/uv/). `uv.lock`
+pins the CPU build of PyTorch 2.14.
+
+```sh
+uv sync
+uv run python -m octlm.train --config configs/day1.toml --dry-run
+```
+
+The dry run builds the model and prints its config hash, parameter count, and logits shape:
+
+```json
+{"config_sha256":"12cc0f1de67889e04411e8d5d78e62ae284318e001f7403f3c8068fb613eae5e","logits_shape":[1,128,1024],"parameters":541952,"type":"dry_run"}
+```
+
+PyTorch prints a NumPy warning on import. octlm never converts a tensor to a NumPy array, so it does
+not depend on NumPy. Ignore the warning.
+
+### Run the demos
+
+The agent demo needs `artifacts/day6/qwen` and `artifacts/day8/adapter-0.pt`. The stories demo
+needs `artifacts/day4/run.pt` and `artifacts/day4/bpe.json`.
 
 ```sh
 uv run python -m octlm.demo agent                     # Qwen + LoRA on bug-low-stock
@@ -35,189 +96,7 @@ uv run python -m octlm.demo stories
 uv run python -m octlm.demo stories --prompt "The dragon was tired." --temperature 1.0
 ```
 
-The recordings are single CPU runs and illustrate the measured results. The pass rates are in
-`notes/day8.md`, and the recording details are in `notes/day9.md`.
-
-## Status
-
-Day 1 is complete: EXP-001 through EXP-008, covering Phase 0 and Phase 1 of nine phases. What runs
-today is a character tokenizer, a byte-level BPE tokenizer, a decoder, a training loop with exact
-resume, and a benchmark schema.
-
-Day 2 is complete: EXP-009 through EXP-015. RoPE, SwiGLU, and two KV heads are keepers, post-norm is
-reverted, and RMSNorm is quality-neutral at this width. Training moved to a Colab T4, because the
-laptop overheats under an hour-long grid.
-
-Day 3a stopped on 2026-09-23 before any GPU run: EXP-016 through EXP-019. Multi-token prediction,
-sliding-window and strided attention, block-compressed KV, and MLA are built and tested behind flags
-that default off. Multi-token prediction runs again as EXP-070. The others are not scheduled.
-
-Day 4 is complete: EXP-065 through EXP-068. A 26M-parameter `modern` model trained on 393M
-TinyStories tokens in float16 on a Kaggle T4 in 4.1 hours. It reaches validation loss 0.7561 and
-0.4839 bits per byte, and writes coherent short stories with temperature 0.8 and top-k 40.
-
-Day 5 is complete. EXP-069 trained three seeds of each stack for 98.3M tokens on a Kaggle T4:
-`modern` averages 0.5539 bits per byte against 0.5877 for the baseline, a gap 6.8 times the 0.0050
-seed spread, but it takes 2.2 times as long per step. EXP-071 and EXP-072 have measured KV-cache and
-int8 results. EXP-070 multi-token prediction loses by 0.0188 bits per byte against the 0.0050 threshold and stays off by default.
-
-Day 6 is complete. `octlm/model.py` loads Qwen3-0.6B and matches the Transformers float32 logits
-within 2.65e-4 on a T4, with exact tokenizer, template, and greedy-token parity.
-
-Day 7 is complete. `python -m octlm.harness eval` runs Qwen3-0.6B through a five-tool harness on
-40 fixture tasks with three seeds and writes JSONL. The stock model passes 0.025 of runs, with a
-seed spread of 0.025 and a valid-call rate of 0.333, mostly because it answers without calling a
-tool. That is the Day 8 baseline.
-
-Day 8 is complete. `python -m octlm.day8` builds 74 scripted tool-use traces, trains rank-16 LoRA
-adapters on all seven projections, and evaluates them with the Day 7 harness. Two training seeds
-reach pass^1 0.375 and 0.467 against the base 0.025, with valid-call rates above 0.97. The merged
-int8 model keeps pass^1 0.375 and halves the stored block weights.
-
-Read `notes/day1.md` through `notes/day8.md` for the sources, measurements, decisions, and open
-checks.
-
-## Requirements
-
-- Python 3.14, pinned by `.python-version`
-- [uv](https://docs.astral.sh/uv/) for dependency resolution
-- PyTorch 2.14, CPU build, pinned by `uv.lock`
-
-Install the environment:
-
-```sh
-uv sync
-```
-
-PyTorch prints a NumPy warning on import. Day 1 never converts a tensor to a NumPy array, so the
-project does not depend on NumPy. Ignore the warning.
-
-## Commands
-
-Build the model without training it. The dry run reports the config hash, the parameter count, and
-the logits shape:
-
-```sh
-uv run python -m octlm.train --config configs/day1.toml --dry-run
-```
-
-```json
-{"config_sha256":"12cc0f1de67889e04411e8d5d78e62ae284318e001f7403f3c8068fb613eae5e","logits_shape":[1,128,1024],"parameters":541952,"type":"dry_run"}
-```
-
-Train both tokenizers and write them to `artifacts/day1/`. Each line of output is one JSON record
-with token counts, bytes per token, and the unknown rate:
-
-```sh
-uv run python -m octlm.tokenizer --vocab-sizes 512 1024 2048
-```
-
-Train the decoder. The trainer prints one JSON record per eval interval and one generation sample at
-the end:
-
-```sh
-uv run python -m octlm.train --tokenizer bpe --metrics runs/day1-bpe.jsonl
-```
-
-Prove that the model, the loss, and the optimizer compose by memorizing one fixed block:
-
-```sh
-uv run python -m octlm.train --tokenizer bpe --overfit --metrics runs/day1-overfit.jsonl
-```
-
-Write a checkpoint, then resume from it. A resumed run produces weights identical to an
-uninterrupted run on the same machine, PyTorch build, and device:
-
-```sh
-uv run python -m octlm.train --checkpoint artifacts/day1/run.pt --stop-after 100
-uv run python -m octlm.train --resume artifacts/day1/run.pt
-```
-
-Measure the forward pass at several context lengths. Day 1 supports only `--dummy`:
-
-```sh
-uv run python -m octlm.bench --dummy --contexts 128 256 512 1024 2048
-```
-
-Build the Day 2 corpus. It reads the Python standard library from this machine and downloads six
-public-domain books once, into `data/`:
-
-```sh
-uv run python -m octlm.corpus
-```
-
-Run the Day 2 experiments. Each stage appends JSONL to `runs/`. The first four are quick. `variants`
-and `length` are training runs that saturate every core for tens of minutes, so start them when the
-machine is free:
-
-```sh
-uv run python -m octlm.day2 tiled         # tiled attention against SDPA
-uv run python -m octlm.day2 equivalence   # SDPA against the handwritten path
-uv run python -m octlm.day2 sdpa          # math against flash, memory and throughput
-uv run python -m octlm.day2 cache         # KV cache bytes per head count
-uv run python -m octlm.day2 variants      # the architecture grid, about 50 minutes
-uv run python -m octlm.day2 length --config configs/day2-long.toml
-uv run python -m octlm.day2 report        # summarize the grid
-```
-
-Run the Day 3a experiments. `cache` and `report` are arithmetic and summaries, so they run anywhere.
-The four experiment stages train and belong on a GPU. Stage 0 comes first and decides whether the
-rest of the day is readable:
-
-```sh
-# Stage 0: the seed spread at the Day 3 budget, in its own file
-uv run python -m octlm.day2 variants --config configs/day3.toml \
-    --variants baseline swiglu modern --out runs/day3-floor.jsonl
-uv run python -m octlm.day2 report --out runs/day3-floor.jsonl
-
-uv run python -m octlm.day3 cache --config configs/day3-long.toml   # cache arithmetic, instant
-uv run python -m octlm.day3 mtp --config configs/day3.toml          # EXP-016
-uv run python -m octlm.day3 sparse --config configs/day3-long.toml       # EXP-017
-uv run python -m octlm.day3 compressed --config configs/day3-long.toml   # EXP-018
-uv run python -m octlm.day3 mla --config configs/day3-long.toml          # EXP-019
-uv run python -m octlm.day3 report
-```
-
-Run Day 4 on a GPU. `notebooks/octlm-kaggle.ipynb` runs the remaining stages on Kaggle.
-`prepare` downloads 2.2 GB and encodes it once. `train` resumes from `--checkpoint` when the file
-exists:
-
-```sh
-python -m octlm.day4 prepare                       # EXP-065
-python -m octlm.day4 train                         # EXP-066 and EXP-067
-python -m octlm.day4 samples --temperature 0       # EXP-068, greedy
-python -m octlm.day4 samples                       # EXP-068, temperature 0.8, top-k 40
-```
-
-### Run Day 4 on Kaggle
-
-1. Create a private Kaggle dataset named `octlm-code` with the repository files at its root. If the
-   GitHub repository is public, Kaggle can import it directly. For a private repository, commit the
-   current code, run `git archive --format=zip --output=octlm-code.zip HEAD`, and upload the ZIP as
-   a private dataset. The dataset must contain `octlm/day4.py` and `configs/day4.toml`.
-2. Import [octlm-kaggle.ipynb](notebooks/octlm-kaggle.ipynb) as a Kaggle notebook. Add `octlm-code`
-   under **Input**. Select **GPU T4 x2** under **Session options**. Turn on **Internet** for the first
-   run, because `prepare` downloads TinyStories from Hugging Face. Check that your account has enough
-   GPU quota for the run.
-3. Select **Save Version > Save & Run All**. The notebook prepares the corpus if needed, trains for
-   24,000 steps, and writes sampled and greedy stories. It uses one T4. The Colab T4 baseline suggests
-   about 4.2 hours of training; Kaggle time has not been measured. Check the first `training` record
-   before trusting that estimate.
-4. After the version succeeds, download `day4/run.pt`, `day4/metrics.jsonl`, and
-   `day4/samples.jsonl` from the version's **Output**. Add its output as an **Input** on a later run
-   and set `PREVIOUS` in the notebook to the attached `day4` folder that contains `data/train.bin`.
-   The notebook copies the files into `/kaggle/working/day4` and resumes automatically.
-
-To resume a partial Colab run, upload `train.bin`, `valid.bin`, `bpe.json`, and `run.pt` as a private
-Kaggle dataset. Place the binary files under `data/`, attach the dataset, and set `PREVIOUS` to its
-root. The trainer verifies the configuration, tokenizer, and token-file hashes before resuming.
-If an interrupted Kaggle version has no saved output, its local checkpoint is unavailable in a new
-session. A successful saved version or an external copy is needed for cross-session resume.
-
-Kaggle uses its preinstalled CUDA PyTorch. Do not run `uv sync` there: this repository's lock file
-pins a CPU PyTorch build for the laptop.
-
-Run the checks:
+### Run the checks
 
 ```sh
 uv run python -m unittest
@@ -225,207 +104,223 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-### Useful flags
+### Run the site
+
+```sh
+cd web
+npm install
+npm run export   # regenerate fixtures from runs/ and artifacts/
+npm test         # TypeScript against Python parity tests
+npm run dev
+```
+
+## How the work is run
+
+Each experiment starts in its day note with a problem, a hypothesis, a baseline, a measurement, and
+a stop condition. It ends with the result, the failures, and a keep or revert decision. A result
+counts only when its gap beats the seed spread. Each design choice names the paper, model report, or
+official source that caused it.
+
+A day starts only when every exit check of the day before passes. The plan changed once, on
+2026-09-23, from pretraining 50M to 150M models to the current path. [`notes/day3.md`](notes/day3.md)
+records why.
+
+## Commands by day
+
+<details>
+<summary>Day 1: tokenizers, decoder, training loop</summary>
+
+Train both tokenizers and write them to `artifacts/day1/`:
+
+```sh
+uv run python -m octlm.tokenizer --vocab-sizes 512 1024 2048
+```
+
+Train the decoder, then memorize one fixed block to prove the model, loss, and optimizer compose:
+
+```sh
+uv run python -m octlm.train --tokenizer bpe --metrics runs/day1-bpe.jsonl
+uv run python -m octlm.train --tokenizer bpe --overfit --metrics runs/day1-overfit.jsonl
+```
+
+Write a checkpoint, then resume it. The resumed run produces the same weights as an uninterrupted
+run on the same machine, PyTorch build, and device:
+
+```sh
+uv run python -m octlm.train --checkpoint artifacts/day1/run.pt --stop-after 100
+uv run python -m octlm.train --resume artifacts/day1/run.pt
+```
+
+Measure the forward pass at several context lengths:
+
+```sh
+uv run python -m octlm.bench --dummy --contexts 128 256 512 1024 2048
+```
 
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--config` | `configs/day1.toml` | Model, training, and tokenizer settings |
 | `--tokenizer` | `bpe` | `bpe` or `character` |
-| `--train` | `PLAN.md` | Training text |
-| `--validation` | `day-wise.md` | Held-out text |
 | `--checkpoint` | none | Where to write the final checkpoint |
 | `--resume` | none | Checkpoint to continue from |
 | `--metrics` | none | JSONL file that receives every eval record |
 | `--stop-after` | none | Stop before `training.steps` |
 | `--overfit` | off | Train and validate on one block |
 | `--dry-run` | off | Build the model, print the shape, exit |
-| `--device` | `auto` | `auto`, `cpu`, `cuda`, or `cuda:N`. `auto` takes the GPU when there is one |
-| `--out` | per stage | JSONL that `octlm.day2 variants` and `report` write and read |
-| `--seeds` | 3 | Seeds per variant in a grid stage |
-| `--probe-step` | 64 | Needle depths the Day 3 copy probe sweeps |
+| `--device` | `auto` | `auto`, `cpu`, `cuda`, or `cuda:N` |
 
-## Running on a GPU
+</details>
 
-The development machine has no GPU. Day 2 and the first Day 4 measurements used a Colab T4.
-`--device` on `octlm.train`, `octlm.day2`, and `octlm.bench` moves the model and its batches to
-CUDA. It defaults to `auto`, which takes the GPU when the machine has one. Each training record
-carries the device it ran on.
+<details>
+<summary>Day 2: modern decoder core</summary>
 
-`notebooks/octlm-colab.ipynb` records the Colab path used for EXP-065 and EXP-066. Kaggle runs the
-remaining Day 4 work. Both notebook environments use preinstalled CUDA PyTorch because `uv.lock`
-pins the CPU build. Their timings cannot be compared against the laptop's CPU timings.
+Build the corpus. It reads the local Python standard library and downloads six public-domain books
+into `data/`:
 
-Two stages are worth a GPU: `variants` and `length`. The rest of Day 2 measures CPU behavior.
-`sdpa` in particular reports process resident memory, which does not describe GPU allocation, so it
-stays on CPU until Phase 5 gives `bench.py` a device-aware memory field.
-
-`octlm.corpus` reads the Python standard library of the machine it runs on, so the corpus belongs to
-the machine that trains. Day 2 ran on Colab, and the fingerprints in `notes/day2.md` are the Colab
-ones. Check `data/manifest.json` against them before comparing a new Day 2 run. A different Python
-image can produce a different corpus.
-
-## What is in the repository
-
-```text
-octlm/
-  config.py      TOML settings, validation at the boundary, SHA-256 fingerprint
-  tokenizer.py   character and byte-level BPE tokenizers, plus their CLI
-  model.py       Generation 0 decoder: learned positions, pre-LayerNorm, MHA, GELU, tied head
-  train.py       training loop, evaluation, atomic checkpoints, resume, CLI
-  bench.py       forward-pass measurement and the frozen `octlm-bench-v1` record schema
-  corpus.py      code and prose corpus builder, manifest with hashes and licenses
-  day2.py        Day 2 experiment stages and the tiled attention sketch
-  day3.py        Day 3a experiment stages, the copy probe, and the cache arithmetic
-  day4.py        TinyStories download, token files, the Day 4 training run, and samples
-notebooks/octlm-colab.ipynb     Colab runs for EXP-065 and EXP-066
-notebooks/octlm-kaggle.ipynb    Kaggle run for EXP-067 and EXP-068
-configs/day1.toml, configs/day2.toml, configs/day2-long.toml
-configs/day3.toml, configs/day3-long.toml, configs/day4.toml
-tests/test_day1.py, tests/test_day2.py, tests/test_day3.py
-notes/day1.md to notes/day4.md    research, decisions, measurements, failures
+```sh
+uv run python -m octlm.corpus
 ```
 
-`model.py` carries both generations on one code path. Every Day 2 switch defaults to the Day 1
-behavior: `position` picks learned, sinusoidal, or rotary embeddings, `norm` picks LayerNorm or
-RMSNorm, `feed_forward` picks GELU or SwiGLU, `attention` picks the handwritten path or SDPA,
-`residual` picks pre-norm or post-norm, and `kv_heads` sets the grouped-query head count.
+`variants` and `length` train for tens of minutes. Run them on a GPU:
 
-Day 3a adds six more, all defaulting to the earlier behavior. `mtp_depth` adds multi-token
-prediction heads, `attention_window` and `attention_stride` narrow the causal mask,
-`kv_compress_block` mean-pools the keys and values outside that window, and `mla_rank` with
-`mla_rope_dim` switch attention to a low-rank latent cache with a decoupled RoPE key.
+```sh
+uv run python -m octlm.day2 tiled         # tiled attention against SDPA
+uv run python -m octlm.day2 equivalence   # SDPA against the handwritten path
+uv run python -m octlm.day2 sdpa          # math against flash, memory and throughput
+uv run python -m octlm.day2 cache         # KV cache bytes per head count
+uv run python -m octlm.day2 variants      # the architecture grid
+uv run python -m octlm.day2 length --config configs/day2-long.toml
+uv run python -m octlm.day2 report
+```
 
-Both tokenizers preserve input bytes exactly. Neither lowercases text nor normalizes Unicode. BPE
-learns merges from the training corpus only, breaks equal-frequency ties by token ID, and never
-merges across a pre-token boundary. Ordinary text containing `<|tool_call|>` encodes as literal
-characters, not as the special token.
-
-Every checkpoint stores the config hash, the tokenizer hash, the dataset hash, the optimizer state,
-and three random-generator states. A resume with a mismatched hash fails instead of training on the
-wrong assumption.
-
-## What Day 1 measured
-
-The training text is `PLAN.md`. The held-out text is `day-wise.md`. Both are small, so treat these
-as smoke measurements, not performance claims.
-
-| Run | Tokens on held-out prose | Validation perplexity | Bits per byte |
-| --- | ---: | ---: | ---: |
-| Character, 86 entries, 40 steps | 13,939 | 29.998 | 4.9068 |
-| BPE, 1,024 entries, 40 steps | 7,319 | 240.391 | 4.1497 |
-| BPE, 1,024 entries, 200 steps, one block | 128 | 2.4830 | 0.6338 |
-
-Raw perplexity cannot compare two tokenizers, because each predicts a different unit. Bits per UTF-8
-byte can. BPE improved bits per byte by 15.4 percent over the character baseline on the same step
-budget.
-
-The character tokenizer mapped 77.8 percent of an unseen Unicode sample to UNK. The BPE tokenizer
-represented every byte of the same sample with no unknown token. A 2,048-entry BPE request stopped
-early at 1,708 entries, because no remaining pair occurred twice.
-
-A batch-one forward pass took 4.0 ms at 128 tokens and 115.2 ms at 2,048 tokens. Peak resident
-memory reached 504 MB. The largest verified Day 1 context is 2,048 tokens. The same forward pass takes 9.1 ms
-at 2,048 tokens on a Colab T4.
-
-## What Day 1 does not have
-
-These are deferred on purpose, not missing by accident:
-
-- No KV cache, no `torch.compile`, no mixed precision, no quantization. Day 2 added SDPA; Day 1's
-  handwritten attention stays as the reference the SDPA path is checked against.
-- No sampling. Generation is greedy.
-- No GPU path. `nvidia-smi` found no driver on the development machine.
-- `bench.py` emits the full `octlm-bench-v1` record but fills only the fields Day 1 can measure.
-  Decode throughput, time to first token, and perplexity stay null until Phase 5 fills them.
-- BPE training recounts every pair after every merge. The cost grows with both the corpus and the
-  merge count. It will be replaced when profiling on a real corpus shows it blocks work.
-
-The repository layout in `PLAN.md` lists directories for every phase. Those directories get created
-when their experiment starts. Empty scaffolding is not allowed.
-
-## What Day 2 measured
-
-`tiled_attention` reproduces `scaled_dot_product_attention` to 4.8e-7 at every block size, and the
-full model through SDPA matches the handwritten path to about 1e-6 at 8, 4, 2, and 1 KV heads. That
-equivalence is what licenses the SDPA path in later runs.
-
-Attention benchmark at batch 1, 8 heads, head width 32, one forward pass per row. Each measurement
-runs in its own process, because peak resident memory is a process high-water mark:
-
-| Length | dtype | Backend | Seconds | Tokens/s | RSS growth |
-| ---: | --- | --- | ---: | ---: | ---: |
-| 1024 | float32 | math | 0.0220 | 46,491 | 80 MB |
-| 1024 | float32 | flash | 0.0038 | 268,554 | 9 MB |
-| 4096 | float32 | math | 0.3177 | 12,891 | 1.29 GB |
-| 4096 | float32 | flash | 0.0428 | 95,673 | 33 MB |
-| 8192 | float32 | math | 1.2644 | 6,479 | 5.17 GB |
-| 8192 | float32 | flash | 0.1200 | 68,250 | 62 MB |
-
-At 8192 tokens the flash kernel is 10.5x faster on 84x less memory growth. The math backend
-allocates the full score matrix, so its footprint grows quadratically. Bfloat16 is slower than
-float32 on this CPU at every length, which is the opposite of the GPU case.
-
-The corpus is 6.9 MB of training text and 0.9 MB held out, 60 percent Python standard library and 40
-percent public-domain books, built on Colab from Python 3.13.15. A 2,048-entry BPE tokenizer trained
-on a tenth of it reaches 0.431 tokens per byte, against 0.525 for the Day 1 tokenizer on the Day 1
-corpus.
-
-The variant grid ran 8 architectures across 3 seeds, 400 steps each, on one T4 in 4 minutes. Bits per
-byte on held-out code, averaged over seeds, with the seed spread beside it:
+Eight architectures, three seeds, 400 steps each on one T4. Bits per byte on held-out code:
 
 | Variant | Code bpb | Seed spread | Cache at 4K | Decision |
 | --- | ---: | ---: | ---: | --- |
 | baseline | 2.9339 | 0.0434 | 16 MiB | control |
 | swiglu | 2.8521 | 0.0085 | 16 MiB | keep |
 | rmsnorm | 2.9352 | 0.0390 | 16 MiB | keep only inside `modern` |
-| gqa-2 | 2.9449 | 0.0235 | 4 MiB | keep, the cache is the win |
+| gqa-2 | 2.9449 | 0.0235 | 4 MiB | keep, for the cache |
 | post-norm | 3.9310 | 0.0047 | 16 MiB | revert |
 | modern | 2.8045 | 0.1194 | 4 MiB | best measured, not separated from `swiglu` |
 
-Read the spread before the gap. The baseline moves 0.043 bits per byte across three seeds with
-nothing else changed, so SwiGLU's 0.082 is the only single-component result outside the noise.
+The baseline moves 0.043 bits per byte across seeds with nothing else changed, so SwiGLU's 0.082 is
+the only single-component result outside the noise.
 
-On the length sweep, RoPE beats sinusoidal positions at every evaluation length, by 0.76 bits per
-byte at 2,048. Extrapolation past the 512-token training length degrades rather than collapses, 2.29
-at 2,048 against 2.90 at 8,192. Position interpolation pays only past 4x the trained length.
+</details>
 
-## What Day 3a built
+<details>
+<summary>Day 3a: attention variants, stopped before training</summary>
 
-Nothing was measured. The code is built and the checks pass, but no training stage ran before the
-plan changed.
+```sh
+uv run python -m octlm.day3 cache --config configs/day3-long.toml
+uv run python -m octlm.day3 mtp --config configs/day3.toml
+uv run python -m octlm.day3 sparse --config configs/day3-long.toml
+uv run python -m octlm.day3 compressed --config configs/day3-long.toml
+uv run python -m octlm.day3 mla --config configs/day3-long.toml
+uv run python -m octlm.day3 report
+```
 
-Day 2 closed by demanding a bigger step budget: its baseline moved 0.043 bits per byte across three
-seeds with nothing else changed, which swallowed every single-component result except SwiGLU's.
-`configs/day3.toml` is `configs/day2.toml` with the budget raised from 400 steps to 2000 and nothing
-else touched, so the Day 2 rows stay comparable. Stage 0 measures the new spread and freezes it as
-the minimum effect the day is allowed to claim.
+Every Day 3a flag in `model.py` defaults off: `mtp_depth`, `attention_window`, `attention_stride`,
+`kv_compress_block`, `mla_rank`, and `mla_rope_dim`.
 
-The cache arithmetic already runs, and it sets up EXP-019. At `d_model` 256 with 8 query heads and
-2 KV heads, the present cache holds 128 dimensions per token per layer. MLA holds `rank + rope_dim`,
-so it only undercuts GQA-2 below rank 112, against the 10x reductions the papers report for wide
-models. Block compression is the larger win here: at 4,096 tokens with a 128-token exact window,
-block 8 caches 624 positions instead of 4,096.
+</details>
 
-Both hypotheses are written into `notes/day3.md` before the runs, along with the predicted negative
-for multi-token prediction at this size.
+<details>
+<summary>Days 4 and 5: the 26M model, seeds, KV cache, int8</summary>
 
-## What is coming
+```sh
+python -m octlm.day4 prepare                       # download and encode 2.2 GB of TinyStories
+python -m octlm.day4 train                         # resumes from --checkpoint when it exists
+python -m octlm.day4 samples --temperature 0
+python -m octlm.day4 samples                       # temperature 0.8, top-k 40
 
-| Day | Experiments | Work |
-| --- | --- | --- |
-| 4 | EXP-065 to EXP-068 | TinyStories tokenizer, float16 on a T4, the 20M main run, sampling |
-| 5 | EXP-069 to EXP-072 | Seed spread at the new scale, multi-token prediction, KV cache, int8 |
-| 6 | EXP-073 to EXP-076 | Qwen weights in `model.py`, logit and tokenizer parity, cached generation |
-| 7 | EXP-077 to EXP-079 | Tool-call parser, the harness loop, the eval set and the stock-model baseline |
-| 8 | EXP-080 to EXP-083 | LoRA from scratch, harness traces, SFT, merge and int8 |
-| 9 | optional | GRPO on the task checks, or routing failed tasks to an external API |
+python -m octlm.day5 spread                        # three seeds per stack
+python -m octlm.day5 mtp
+python -m octlm.day5 cache
+python -m octlm.day5 quant
+```
 
-## Working on this
+The KV cache matches naive greedy output token for token and decodes 10.6 to 15.8 percent faster.
+int8 weights cut the inference checkpoint from 52.5 MB to 30.7 MB, change bits per byte by
++0.00003, and decode 20 percent slower. Float16 stays the default.
 
-Read `PLAN.md` and every completed note in `notes/` before you change code. Take the
-lowest unfinished experiment. Write the note first with a hypothesis and a baseline, then implement,
-then fill in the measurements, then record keep or revert. Do not start a day until the previous
-day's exit check passes.
+</details>
 
-`AGENTS.md` holds the full rules for research, note keeping, code size, tokenizer behavior, and
-phase boundaries.
+<details>
+<summary>Days 6 to 9: Qwen, the harness, LoRA, GRPO</summary>
+
+```sh
+python -m octlm.day6 prepare                       # pinned Qwen3-0.6B snapshot with hashes
+python -m octlm.day6 run                           # logit, tokenizer, and template parity
+
+python -m octlm.harness validate                   # each check fails before and passes after the fix
+python -m octlm.harness eval --seeds 0 1 2         # 40 tasks, writes JSONL
+
+python -m octlm.day8 traces
+python -m octlm.day8 train --seed 0
+python -m octlm.day8 eval --adapter artifacts/day8/adapter-0.pt
+python -m octlm.day8 eval --adapter artifacts/day8/adapter-0.pt --int8
+
+python -m octlm.day9 probe
+python -m octlm.day9 train
+```
+
+</details>
+
+## Run on a GPU
+
+The development laptop has no GPU and overheats under long runs, so training runs on Colab and
+Kaggle T4s. Each day that trains has a notebook in [`notebooks/`](notebooks/). The notebooks use the
+preinstalled CUDA PyTorch. Do not run `uv sync` there, because `uv.lock` pins the CPU build.
+`--device auto` takes the GPU when there is one, and each training record names the device it ran
+on.
+
+<details>
+<summary>Run a notebook on Kaggle</summary>
+
+1. Create a private Kaggle dataset named `octlm-code` with the repository files at its root. For a
+   private repository, run `git archive --format=zip --output=octlm-code.zip HEAD` and upload the
+   ZIP.
+2. Import the notebook, for example [`octlm-kaggle.ipynb`](notebooks/octlm-kaggle.ipynb). Add
+   `octlm-code` under **Input**. Select **GPU T4 x2** under **Session options**. Turn on
+   **Internet** for the first run.
+3. Select **Save Version > Save & Run All**.
+4. Download the outputs from the version's **Output**. To resume, add that output as an **Input**
+   and set `PREVIOUS` to the attached `day4` folder. The trainer checks the config, tokenizer, and
+   token-file hashes before it resumes.
+
+</details>
+
+## Repository layout
+
+```text
+octlm/
+  config.py      TOML settings, validation, SHA-256 fingerprint
+  tokenizer.py   character and byte-level BPE tokenizers
+  model.py       the decoder, every architecture switch, Qwen3 weights
+  train.py       training loop, atomic checkpoints, exact resume
+  bench.py       forward-pass measurement, the octlm-bench-v1 schema
+  corpus.py      Day 2 code and prose corpus with hashes and licenses
+  day2.py ... day9.py   one module of experiment stages per day
+  harness.py     tool-call parser, agent loop, task checks, pass^k
+  demo.py        the live agent and stories demos
+configs/         one TOML per day
+fixtures/        Day 7 eval tasks, Day 8 SFT and GRPO tasks
+notebooks/       Colab and Kaggle runs
+notes/           one note per day: sources, decisions, measurements, failures
+runs/            JSONL records from every measured run
+tests/           unittest suites
+web/             the Astro build log
+```
+
+Both tokenizers preserve input bytes exactly. BPE learns merges from training data only, breaks
+ties by token ID, and never merges across a pre-token boundary. Ordinary text that contains
+`<|tool_call|>` encodes as literal characters. Every checkpoint stores the config, tokenizer, and
+dataset hashes, and a resume with a mismatched hash fails.
+
+## Contribute
+
+Read [`PLAN.md`](PLAN.md), [`AGENTS.md`](AGENTS.md), and every completed note before you change
+code. Take the lowest unfinished experiment. Write the hypothesis and baseline into the day note
+first, then implement, measure, and record keep or revert.
