@@ -128,9 +128,9 @@ Decision, keep float16 for the main run.
 
 One step is 32 blocks of 512 tokens, 16,384 tokens. At 0.625 seconds per step that's about 26,200 tokens per second. Training costs about 6 FLOPs per parameter per token, so 26,200 tokens per second on a 26.3M-parameter model is about 4.1 TFLOPs sustained.
 
-The plan had assumed 15 TFLOPs, which is closer to the T4's float16 peak than to what a whole training step actually gets. At the measured rate the main run's 24,000 steps take about 4.2 hours, not 70 minutes. [Why the plan changed](/posts/why-the-plan-changed/) uses that rate in the compute estimator.
+The plan had assumed 15 TFLOPs, which is closer to the T4's float16 peak than to what a whole training step actually gets. At the measured rate the main run's 24,000 steps take about 4.2 hours, not 70 minutes. [Why the plan changed](/blogs/why-the-plan-changed/) uses that rate in the compute estimator.
 
-And the estimate held. [The main run](/posts/the-main-run/) trained all {run.step.toLocaleString("en-US")} steps in float16 on a Kaggle T4 in {(run.elapsed_seconds / 3600).toFixed(1)} hours, {(run.elapsed_seconds / run.step).toFixed(3)} seconds per step. The loss never diverged, and the step-1,000 validation loss, {metrics[0].validation_loss.toFixed(4)}, matches the float16 row above.
+And the estimate held. [The main run](/blogs/the-main-run/) trained all {run.step.toLocaleString("en-US")} steps in float16 on a Kaggle T4 in {(run.elapsed_seconds / 3600).toFixed(1)} hours, {(run.elapsed_seconds / run.step).toFixed(3)} seconds per step. The loss never diverged, and the step-1,000 validation loss, {metrics[0].validation_loss.toFixed(4)}, matches the float16 row above.
 
 <Label>Skipped</Label>
 

@@ -20,7 +20,7 @@ Everything octlm builds is for one task. Given the tokens so far, output a proba
 
 ## A probability for every possible next token
 
-Text first gets split into tokens, small pieces with integer IDs. The Day 1 tokenizer has 1,024 of them, the Day 4 one has 8,192. [Characters vs bytes](/posts/character-tokenizer/) covers how the split works, for now just think of a token as a number between 0 and V − 1.
+Text first gets split into tokens, small pieces with integer IDs. The Day 1 tokenizer has 1,024 of them, the Day 4 one has 8,192. [Characters vs bytes](/blogs/character-tokenizer/) covers how the split works, for now just think of a token as a number between 0 and V − 1.
 
 The model reads tokens $x_1, \dots, x_t$ and produces one score per vocabulary entry, so a vector of $V$ numbers called logits. Softmax turns those scores into probabilities:
 
@@ -30,7 +30,7 @@ $$
 
 The exponent makes every probability positive and the division makes them sum to 1. Higher score means higher probability, and only the differences between scores matter, if you add 5 to every score nothing changes.
 
-And that's the whole interface. The model doesn't output a word. It outputs a distribution, and something outside the model picks from it, either the most likely token for greedy decoding, or a random draw for sampling, which [the sampling post](/posts/sampling/) covers.
+And that's the whole interface. The model doesn't output a word. It outputs a distribution, and something outside the model picks from it, either the most likely token for greedy decoding, or a random draw for sampling, which [the sampling post](/blogs/sampling/) covers.
 
 <Label>Playground</Label>
 
@@ -67,7 +67,7 @@ Why a log though ? The probability of the whole text is the product of the per-t
 
 Natural log gives the loss in nats, divide by $\ln 2$ and you get bits. PyTorch's `cross_entropy` uses nats, and so does every `loss` field in `runs/`.
 
-A useful reference point is the loss of a model that knows nothing and spreads probability evenly, which is $\ln V$. For the Day 1 vocabulary that's $\ln 1024 \approx 6.93$ nats, so a fresh model should start somewhere near there. [The baseline block](/posts/baseline-block/) shows what happened when ours didn't.
+A useful reference point is the loss of a model that knows nothing and spreads probability evenly, which is $\ln V$. For the Day 1 vocabulary that's $\ln 1024 \approx 6.93$ nats, so a fresh model should start somewhere near there. [The baseline block](/blogs/baseline-block/) shows what happened when ours didn't.
 
 <Figure label="Playground" caption="The penalty the loss gives one prediction, as a function of the probability the model gave the correct token. Natural log in blue, base 2 in orange.">
   <ProbabilityCurve client:visible />
@@ -86,7 +86,7 @@ A decoder predicts at every position in parallel. Feed it $T$ tokens and it give
 ### So what happened ?
 
 - A sentence of a dozen tokens gives a dozen predictions, all computed at once. That's why training a decoder is efficient, one pass gives one loss per position.
-- Position $t$ must not see token $t + 1$, which is sitting in the same input. [Causal attention](/posts/causal-attention/) enforces that with a mask.
+- Position $t$ must not see token $t + 1$, which is sitting in the same input. [Causal attention](/blogs/causal-attention/) enforces that with a mask.
 - The last input token has a target, `<|eos|>`. Nothing predicts `<|bos|>`, because nothing comes before it.
 
 <Label>Perplexity</Label>
@@ -101,7 +101,7 @@ $$
 
 A perplexity of 30 means the model is, on average, as unsure as a fair choice among 30 tokens. A uniform model has perplexity $V$.
 
-But perplexity has a trap, it depends on what a token is. If a tokenizer's tokens cover more text, each prediction is harder because each token carries more information, so its perplexity goes up even when the model is better. The Day 1 results hit exactly this, the BPE model's perplexity was 8 times the character model's, and it was the better model. [Measuring a tokenizer](/posts/measuring-tokenizers/) works through the numbers.
+But perplexity has a trap, it depends on what a token is. If a tokenizer's tokens cover more text, each prediction is harder because each token carries more information, so its perplexity goes up even when the model is better. The Day 1 results hit exactly this, the BPE model's perplexity was 8 times the character model's, and it was the better model. [Measuring a tokenizer](/blogs/measuring-tokenizers/) works through the numbers.
 
 <Label>Bits per byte</Label>
 

@@ -67,7 +67,7 @@ The character tokenizer learned 86 entries from `PLAN.md`, 4 specials and 82 cha
 
 On an unseen Unicode sample, 77.8 percent of the characters mapped to `<|unk|>`. That's bad.
 
-Then a small model trained on each tokenizer's output for the same 40 steps. With the character tokenizer, validation loss got to {last.validation_loss.toFixed(4)} nats per token, perplexity {last.validation_perplexity.toFixed(3)}, and {last.validation_bits_per_byte.toFixed(4)} bits per byte. Those three numbers come from `runs/day1-character.jsonl`. [Measuring a tokenizer](/posts/measuring-tokenizers/) puts them next to BPE.
+Then a small model trained on each tokenizer's output for the same 40 steps. With the character tokenizer, validation loss got to {last.validation_loss.toFixed(4)} nats per token, perplexity {last.validation_perplexity.toFixed(3)}, and {last.validation_bits_per_byte.toFixed(4)} bits per byte. Those three numbers come from `runs/day1-character.jsonl`. [Measuring a tokenizer](/blogs/measuring-tokenizers/) puts them next to BPE.
 
 Decision, keep it as the baseline. It was never supposed to be the model's actual tokenizer.
 

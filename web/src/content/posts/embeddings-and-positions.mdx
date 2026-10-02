@@ -40,7 +40,7 @@ The rows start random. Training moves them so that tokens used in similar contex
 
 ## Attention doesn't know the order
 
-[Attention](/posts/causal-attention/) compares every position's query with every earlier position's key. Nothing in that comparison says which key is one step back and which one is fifty back. The causal mask gives you one fact, that a key isn't in the future. Beyond that, if you shuffled the earlier tokens, each position would get the exact same weighted average.
+[Attention](/blogs/causal-attention/) compares every position's query with every earlier position's key. Nothing in that comparison says which key is one step back and which one is fifty back. The causal mask gives you one fact, that a key isn't in the future. Beyond that, if you shuffled the earlier tokens, each position would get the exact same weighted average.
 
 And for language that's fatal. "The dog bit the man" and "The man bit the dog" would look the same to the last position. So the model needs position added into the vector before attention sees it.
 
@@ -93,7 +93,7 @@ The first pair turns once every $2\pi$ positions, the last pair turns about 10,0
 - In the similarity map, the band along the diagonal has the same shape all the way down. The dot product of two sinusoidal position vectors is a sum of $\cos(\omega_i (t - s))$ terms, so it only depends on the distance $t - s$.
 - Wider tables separate positions more sharply, because more frequencies take part.
 
-That second point is why sinusoids were picked in the first place. A fixed offset is a fixed linear map, so a model could learn "attend 3 back" once and use it anywhere. In practice though, the signal gets added to the token vector and then mixed by the projections, which blurs it. Day 2 replaced both approaches with [RoPE](/posts/rope/), which applies position inside attention itself.
+That second point is why sinusoids were picked in the first place. A fixed offset is a fixed linear map, so a model could learn "attend 3 back" once and use it anywhere. In practice though, the signal gets added to the token vector and then mixed by the projections, which blurs it. Day 2 replaced both approaches with [RoPE](/blogs/rope/), which applies position inside attention itself.
 
 <Label>In octlm</Label>
 
@@ -125,7 +125,7 @@ The Day 1 reading plan also covered pooling, which turns a sequence of vectors i
 
 - **Pooling layers.** Explained above, we don't write code nobody uses.
 - **Embedding plots.** An untrained model's embedding space has no structure worth plotting.
-- **Separate input and output tables.** octlm ties the output head to this same table. [The baseline block](/posts/baseline-block/) covers why.
+- **Separate input and output tables.** octlm ties the output head to this same table. [The baseline block](/blogs/baseline-block/) covers why.
 
 <Callout hue="gray" title="Sources">
   <p>Vaswani et al., <a href="https://arxiv.org/abs/1706.03762">Attention is all you need</a>, section 3.5, for sinusoidal encodings and the linear-offset argument. The <a href="https://cdn.openai.com/better-language-models/language-models.pdf">GPT-2 report</a> for learned absolute positions. EXP-005 and the pooling decision come from <code>notes/day1.md</code>. The learned-table limit comes from <code>notes/day2.md</code>.</p>

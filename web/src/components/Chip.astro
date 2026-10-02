@@ -18,15 +18,14 @@ const Tag = href ? "a" : "span";
     gap: 8px;
     font-weight: 560;
     color: var(--tint-fg);
-    background: linear-gradient(180deg, var(--tint-surface), var(--tint-bottom));
+    background: var(--tint-surface);
     border: 1px solid var(--tint-border);
-    box-shadow: 0 1px 1px rgb(0 0 0 / 0.02), 0 2px 6px -3px rgb(0 0 0 / 0.06);
     white-space: nowrap;
     text-decoration: none;
     line-height: 1;
     transition: border-color var(--fast) var(--ease);
   }
-  .sm { height: 28px; padding: 0 11px; font-size: 13px; border-radius: 9px; }
+  .sm { height: 26px; padding: 0 9px; font-size: 12.5px; border-radius: 6px; }
   .md { height: 44px; padding: 0 18px; font-size: 15px; border-radius: var(--r-chip); }
   a.chip:hover { border-color: var(--tint-fg); }
   .chip :global(svg) { width: 16px; height: 16px; flex: none; }

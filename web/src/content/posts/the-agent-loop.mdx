@@ -26,7 +26,7 @@ export const long = runs.filter((r) => r.turns >= 3);
 export const decode = t4.filter((r) => r.type === "qwen_generation").map((r) => r.tokens_per_second.toFixed(1));
 export const [turns, perTurn, context, timeout, clipLimit] = env.limits;
 
-[The parser](/posts/tool-calls/) turns text into calls. This post is about everything around it: the loop that alternates between the model and the tools, the sandbox that keeps the tools contained, and a KV cache that carries over from one turn to the next.
+[The parser](/blogs/tool-calls/) turns text into calls. This post is about everything around it: the loop that alternates between the model and the tools, the sandbox that keeps the tools contained, and a KV cache that carries over from one turn to the next.
 
 <Label>The loop</Label>
 
@@ -72,7 +72,7 @@ $$
 \text{keep} = \min\big(\text{LCP}(\text{cached}, \text{prompt}),\ |\text{prompt}| - 1\big)
 $$
 
-LCP is the length of the longest common prefix. The cache gets cut to `keep` positions, and only the rest is prefilled. The minus one ensures at least one token is prefilled, because the next token's logits come from the last prompt position. [Day 6's parity test](/posts/logit-parity/) already showed that a cache built in two chunks matches a full forward pass, so a cut cache needs no new proof.
+LCP is the length of the longest common prefix. The cache gets cut to `keep` positions, and only the rest is prefilled. The minus one ensures at least one token is prefilled, because the next token's logits come from the last prompt position. [Day 6's parity test](/blogs/logit-parity/) already showed that a cache built in two chunks matches a full forward pass, so a cut cache needs no new proof.
 
 <Source file="octlm/harness.py" symbol="generate_turn" />
 
@@ -99,7 +99,7 @@ The hypothesis was that tasks of three or more turns would save more than half t
 
 The long-run row rests on {long.length} runs, because the stock model rarely takes a second turn. Day 8's fine-tuned model should produce many more.
 
-Generation ran at {summary.generated_tokens_per_second.toFixed(1)} tokens per second on the T4. That includes each turn's prefill, so it sits below [Day 6's](/posts/qwen-generation/) decode-only {decode.join(" and ")}.
+Generation ran at {summary.generated_tokens_per_second.toFixed(1)} tokens per second on the T4. That includes each turn's prefill, so it sits below [Day 6's](/blogs/qwen-generation/) decode-only {decode.join(" and ")}.
 
 Decision: keep prefix reuse.
 

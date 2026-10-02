@@ -43,7 +43,7 @@ export const stopsBy = (rows, kind) => rows.filter((r) => r.kind === kind && r.s
 export const hash = (row) => row.adapter_hash.slice(0, 8);
 export const step = (rows, n) => rows.find((r) => r.type === "sft_step" && r.step === n).loss;
 
-The [fine-tuned adapters](/posts/sft-with-lora/) work, but they cost something at inference. Every adapted projection runs three matmuls instead of one: the base weight, then A, then B. This post folds the adapter into the base weights, checks the fold, and stores the result with [Day 5's int8 path](/posts/int8-weight-only/).
+The [fine-tuned adapters](/blogs/sft-with-lora/) work, but they cost something at inference. Every adapted projection runs three matmuls instead of one: the base weight, then A, then B. This post folds the adapter into the base weights, checks the fold, and stores the result with [Day 5's int8 path](/blogs/int8-weight-only/).
 
 <Label>The merge</Label>
 
@@ -119,7 +119,7 @@ The rerun's adapter hash is `{hash(env)}`. The first run's was `{hash(eval0[0])}
   <LossLines client:visible runs={[{ name: "first run", rows: train0 }, { name: "rerun", rows: rerun, dashed: true }]} note="The curves agree within a few percent for the first 20 steps, separate by the end of the first epoch, and differ by a factor of two or more on many steps of the third, where the losses are tiny." />
 </Figure>
 
-Two things differ between the runs. Some CUDA kernels PyTorch uses in training are nondeterministic unless you ask for deterministic ones, and the [training traces](/posts/scripted-traces/) contain a random sandbox path and unittest timings that change from run to run. So the int8 eval below runs a different adapter from the float16 eval it's compared with.
+Two things differ between the runs. Some CUDA kernels PyTorch uses in training are nondeterministic unless you ask for deterministic ones, and the [training traces](/blogs/scripted-traces/) contain a random sandbox path and unittest timings that change from run to run. So the int8 eval below runs a different adapter from the float16 eval it's compared with.
 
 <Label>Result</Label>
 

@@ -26,7 +26,7 @@ export const stats = (greedy) => {
 export const greedy = stats(true);
 export const sampled = stats(false);
 
-[A language model predicts](/posts/next-token-prediction/) a probability for every token in the vocabulary. Generation turns that into text one token at a time, it picks a token, appends it, and runs the model again. Up to Day 3, octlm always picked the most likely token. Day 4 added sampling, because the exit check judges the model's stories, and with greedy decoding it would be judging the decoding instead.
+[A language model predicts](/blogs/next-token-prediction/) a probability for every token in the vocabulary. Generation turns that into text one token at a time, it picks a token, appends it, and runs the model again. Up to Day 3, octlm always picked the most likely token. Day 4 added sampling, because the exit check judges the model's stories, and with greedy decoding it would be judging the decoding instead.
 
 <Label>The problem</Label>
 
@@ -81,13 +81,13 @@ Top-k sets every logit outside the $k$ largest to $-\infty$ before the softmax, 
 
 <Source file="octlm/model.py" symbol="Decoder.generate" />
 
-These Day 4 samples used the generator that reruns the whole context. [Day 5's KV-cached generator](/posts/kv-cache-in-practice/) now reuses past keys and values, and the trained T4 run measured a 10.6 to 15.8 percent speed gain with exact greedy-token parity.
+These Day 4 samples used the generator that reruns the whole context. [Day 5's KV-cached generator](/blogs/kv-cache-in-practice/) now reuses past keys and values, and the trained T4 run measured a 10.6 to 15.8 percent speed gain with exact greedy-token parity.
 
 <Label>EXP-068</Label>
 
 ## Twenty stories from the trained model
 
-`octlm.day4 samples` loaded the step-24,000 checkpoint from [the main run](/posts/the-main-run/) and wrote ten fixed prompts twice, once greedy, once at temperature 0.8 with top-k 40, seed 0. Each continuation is 200 new tokens, so most stories stop mid-sentence. All twenty are below, read from the run's `samples.jsonl`.
+`octlm.day4 samples` loaded the step-24,000 checkpoint from [the main run](/blogs/the-main-run/) and wrote ten fixed prompts twice, once greedy, once at temperature 0.8 with top-k 40, seed 0. Each continuation is 200 new tokens, so most stories stop mid-sentence. All twenty are below, read from the run's `samples.jsonl`.
 
 <Figure label="Playground" caption="Pick a prompt to read both continuations side by side. Marked words belong to a four-word run that already showed up earlier in the same story, counted on this page from the generated text only.">
   <StoryCompare client:visible samples={samples} />

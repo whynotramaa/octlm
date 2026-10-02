@@ -18,13 +18,10 @@ const { label, caption } = Astro.props;
   .figure > .label { margin: 0 0 12px 4px; }
   .stage {
     background: var(--surface);
-    border: 1px solid var(--line);
     border-radius: var(--r-figure);
-    box-shadow: var(--shadow-soft);
     padding: clamp(18px, 3.4vw, 36px);
-    transition: border-color var(--slow) var(--ease), box-shadow var(--slow) var(--ease);
+    transition: background var(--slow) var(--ease);
   }
-  .figure:hover .stage { border-color: var(--line-2); box-shadow: var(--shadow); }
   .figure > .label { color: var(--tint-fg, var(--ink-3)); }
   figcaption {
     max-width: var(--measure);

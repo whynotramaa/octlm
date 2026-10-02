@@ -14,7 +14,7 @@ import Callout from "../../components/Callout.astro";
 import MlaCache from "../../widgets/MlaCache.tsx";
 import MlaPaths from "../../widgets/MlaPaths.tsx";
 
-[Grouped-query attention](/posts/gqa-and-kv-cache/) shrinks the cache by sharing key and value heads. DeepSeek-V2's multi-head latent attention (MLA) goes further. It caches one low-rank vector per token, shared by every head, and rebuilds the keys and values from it when it needs them.
+[Grouped-query attention](/blogs/gqa-and-kv-cache/) shrinks the cache by sharing key and value heads. DeepSeek-V2's multi-head latent attention (MLA) goes further. It caches one low-rank vector per token, shared by every head, and rebuilds the keys and values from it when it needs them.
 
 <Label>Definition</Label>
 

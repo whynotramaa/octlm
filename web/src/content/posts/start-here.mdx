@@ -39,10 +39,10 @@ This series follows the build in the order it happened. Day 0 is this post and t
 The plan has three stages.
 
 1. Write a decoder from scratch, around 20 million parameters, and train it on children's stories until it writes coherent ones.
-2. Load Qwen, a real open model, into the same code and [check that it gives the same logits](/posts/logit-parity/) as the reference implementation. Done on Day 6.
+2. Load Qwen, a real open model, into the same code and [check that it gives the same logits](/blogs/logit-parity/) as the reference implementation. Done on Day 6.
 3. Fine-tune Qwen with LoRA, written inside octlm, so it emits tool calls, and build a harness that runs it against a fixed set of tasks.
 
-The first stage proves the internals. The second proves they're the same internals a production model uses. The third gives us something we can measure on top of them. The plan used to be way bigger, and [why the plan changed](/posts/why-the-plan-changed/) covers what got cut and why.
+The first stage proves the internals. The second proves they're the same internals a production model uses. The third gives us something we can measure on top of them. The plan used to be way bigger, and [why the plan changed](/blogs/why-the-plan-changed/) covers what got cut and why.
 
 <Label>The method</Label>
 
@@ -86,7 +86,7 @@ The parameter count is simple enough to do by hand, and the counter below does t
 
 ### So what happened ?
 
-- The token embedding is the biggest single part at Day 1 size, 1,024 entries of 128 numbers. The output head reuses the same matrix, so it adds nothing. [The baseline block](/posts/baseline-block/) explains why.
+- The token embedding is the biggest single part at Day 1 size, 1,024 entries of 128 numbers. The output head reuses the same matrix, so it adds nothing. [The baseline block](/blogs/baseline-block/) explains why.
 - Each layer costs the same, so doubling the layers roughly doubles everything except the embedding.
 - Switch positions to RoPE and the position table just disappears, RoPE has no parameters.
 
@@ -107,7 +107,7 @@ The machine is an Intel i5-12450H with 12 logical CPUs, 15 GiB of RAM and no usa
 ### So what happened ?
 
 - From 128 to 1,024 tokens the time grows about as fast as the length. The feed-forward layers and projections cost the same per token, and at these lengths they dominate.
-- From 1,024 to 2,048 the time goes 4x, from 28.7 ms to 115.2 ms. Attention compares every position with every earlier one, so its cost grows with the square of the length, and at 2,048 you start to see it. [Causal attention](/posts/causal-attention/) and [SDPA](/posts/sdpa-and-flashattention/) come back to this square.
+- From 1,024 to 2,048 the time goes 4x, from 28.7 ms to 115.2 ms. Attention compares every position with every earlier one, so its cost grows with the square of the length, and at 2,048 you start to see it. [Causal attention](/blogs/causal-attention/) and [SDPA](/blogs/sdpa-and-flashattention/) come back to this square.
 - Peak memory hit 504 MB by the end of the process.
 
 These are smoke measurements from one run, and the note says that. They set 2,048 as the longest context Day 1 would claim to support, and nothing more than that.

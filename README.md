@@ -8,6 +8,36 @@ is measured against a baseline. `PLAN.md` defines the roadmap. `AGENTS.md` defin
 The plan changed on 2026-09-23. The first plan aimed to pretrain 50M to 150M models into a local
 assistant. `notes/day3.md` records why it stopped and where each of its experiments went.
 
+## Demo
+
+The fine-tuned Qwen3-0.6B fixes a failing test through the Day 7 tool harness, using a LoRA written
+in this repository. The same task and seed without the adapter answers without calling a tool and
+fails.
+
+![Qwen3-0.6B with the Day 8 LoRA fixes a bug and runs the tests](web/public/demo/agent-lora.gif)
+
+![The base model answers without a tool call](web/public/demo/agent-base.gif)
+
+The 26M-parameter TinyStories model, trained from scratch here, streams a story token by token.
+Each token is colored by the probability the model gave it.
+
+![The Day 4 model streams stories colored by token probability](web/public/demo/stories.gif)
+
+Run them yourself. Each needs its weights in `artifacts/`: `day6/qwen` and `day8/adapter-0.pt` for
+the agent, `day4/run.pt` and `day4/bpe.json` for the stories.
+
+```sh
+uv run python -m octlm.demo agent                     # Qwen + LoRA on bug-low-stock
+uv run python -m octlm.demo agent --base              # same task, no adapter
+uv run python -m octlm.demo agent --list              # the 40 eval tasks
+uv run python -m octlm.demo agent --task cart-clear
+uv run python -m octlm.demo stories
+uv run python -m octlm.demo stories --prompt "The dragon was tired." --temperature 1.0
+```
+
+The recordings are single CPU runs and illustrate the measured results. The pass rates are in
+`notes/day8.md`, and the recording details are in `notes/day9.md`.
+
 ## Status
 
 Day 1 is complete: EXP-001 through EXP-008, covering Phase 0 and Phase 1 of nine phases. What runs

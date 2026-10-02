@@ -115,7 +115,7 @@ Decision, keep two KV heads. It cuts the 4K cache from 16 MiB to 4 MiB, and its 
 
 ## What we didn't build, and why
 
-- **The cache itself, on Day 2.** Day 2 measured cache sizes from the formula and didn't actually cache tensors during generation. [Day 5 built and measured it](/posts/kv-cache-in-practice/), exact greedy parity, 256 KiB to 2 MiB of cache, and 10.6 to 15.8 percent faster generation in single T4 timings.
+- **The cache itself, on Day 2.** Day 2 measured cache sizes from the formula and didn't actually cache tensors during generation. [Day 5 built and measured it](/blogs/kv-cache-in-practice/), exact greedy parity, 256 KiB to 2 MiB of cache, and 10.6 to 15.8 percent faster generation in single T4 timings.
 - **Converting an MHA checkpoint to GQA.** The paper mean-pools the key and value projections in each group, then trains for 5 percent of the original steps. octlm trains GQA from scratch, so it never needed the conversion.
 
 <Callout hue="gray" title="Sources">

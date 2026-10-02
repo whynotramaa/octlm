@@ -30,7 +30,7 @@ Look at what happens at the third generated token. The old generator projects ke
 
 ## Save the past keys, compute only the new pair
 
-[Day 2's GQA post](/posts/gqa-and-kv-cache/) worked out the memory cost of these blue cells before any code stored them. [Day 4's sampling post](/posts/sampling/) used the orange path, recompute everything every step. Day 5 finally builds the blue path, the one that reuses.
+[Day 2's GQA post](/blogs/gqa-and-kv-cache/) worked out the memory cost of these blue cells before any code stored them. [Day 4's sampling post](/blogs/sampling/) used the orange path, recompute everything every step. Day 5 finally builds the blue path, the one that reuses.
 
 The first pass over a prompt computes a query, key and value for every position. And when you append one new token, the past tokens' keys and values don't change. So for $t$ generated positions after a one-token prompt, a simplified count of key and value projections is $1 + 2 + \cdots + t = t(t+1)/2$ without a cache, and just $t$ with one. But attention still reads all the past keys at each step, so the cache doesn't make decoding constant-time. GPU launches, memory traffic and the final vocabulary projection still cost time. The diagram shows saved work, not a measured speed ratio.
 

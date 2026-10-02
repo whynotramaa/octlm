@@ -51,7 +51,7 @@ The reference is Hugging Face Transformers 4.57.6, loaded from the same pinned f
 - **TF32 off on the GPU.** Ampere-class GPUs can quietly do float32 matrix products at lower precision. The T4 doesn't have TF32, but the flag stays off anyway.
 - **Eval mode.** No dropout.
 
-Then the test checks two paths through octlm. The full path runs the whole prompt in one call. The cached path splits the prompt in half, runs the first half, keeps its KV cache and feeds the second half on top. The cached path must match too, otherwise [the cache](/posts/kv-cache-in-practice/) would generate from slightly wrong numbers.
+Then the test checks two paths through octlm. The full path runs the whole prompt in one call. The cached path splits the prompt in half, runs the first half, keeps its KV cache and feeds the second half on top. The cached path must match too, otherwise [the cache](/blogs/kv-cache-in-practice/) would generate from slightly wrong numbers.
 
 <Source file="octlm/day6.py" symbol="logits_parity" />
 

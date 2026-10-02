@@ -65,7 +65,7 @@ The paper keeps an optional bias term. LLaMA's version only has a gain, and octl
 
 Hypothesis, RMSNorm matches LayerNorm's quality and is faster. The paper reports speedups from 7 to 64 percent across models and 6.9 to 9.3 percent on a Transformer.
 
-The test is one row of the Day 2 variant grid, 3.3 million parameters, 400 steps, three seeds per variant, on a Colab T4. [Reading the grid](/posts/reading-the-grid/) explains the grid and its noise.
+The test is one row of the Day 2 variant grid, 3.3 million parameters, 400 steps, three seeds per variant, on a Colab T4. [Reading the grid](/blogs/reading-the-grid/) explains the grid and its noise.
 
 <Figure label="Measured" caption="Mean bits per byte over three seeds. The bar is the spread across seeds, centered on the mean. The gray band is the baseline's own seed spread, a gap inside it is noise at this budget. Hover a row for its numbers.">
   <GridChart client:visible rows={grid} highlight={["baseline", "rmsnorm"]} />

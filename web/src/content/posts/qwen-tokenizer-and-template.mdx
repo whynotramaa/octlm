@@ -27,7 +27,7 @@ A model only understands the token IDs it was trained on. Give Qwen the right we
 
 ## Load Qwen's tokenizer, don't rebuild it
 
-[Day 1's BPE](/posts/byte-level-bpe/) learns merges from our own data, and `AGENTS.md` requires that for models we train. Qwen is the exception. Its vocabulary of 151,936 entries ships with its weights in `tokenizer.json`, and the weights only make sense with that exact vocabulary.
+[Day 1's BPE](/blogs/byte-level-bpe/) learns merges from our own data, and `AGENTS.md` requires that for models we train. Qwen is the exception. Its vocabulary of 151,936 entries ships with its weights in `tokenizer.json`, and the weights only make sense with that exact vocabulary.
 
 Could octlm's BPE code read that file? Not without changes. Qwen maps bytes to characters differently, splits text into pre-tokens with a different regex, and handles added tokens its own way. Rewriting all of that would duplicate a tokenizer that already exists. So octlm adds one dependency, Hugging Face's `tokenizers` package, which loads `tokenizer.json` directly. The plan allowed either route and said to decide by exact ID match.
 

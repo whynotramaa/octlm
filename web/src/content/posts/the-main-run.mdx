@@ -40,7 +40,7 @@ Every model so far was either too small or too undertrained to produce readable 
 
 ## The Day 2 modern stack at width 512
 
-`configs/day4.toml` takes every Day 2 keeper, [RoPE](/posts/rope/), [RMSNorm](/posts/rmsnorm/), [SwiGLU](/posts/swiglu/) and [two KV heads](/posts/gqa-and-kv-cache/), through [SDPA](/posts/sdpa-and-flashattention/), with [pre-norm](/posts/residual-placement/) residuals. Width {model.d_model}, {model.n_layers} layers, {model.n_heads} query heads, a {model.context_length}-token context and the 8,192-entry [TinyStories tokenizer](/posts/tinystories-and-the-encoder/).
+`configs/day4.toml` takes every Day 2 keeper, [RoPE](/blogs/rope/), [RMSNorm](/blogs/rmsnorm/), [SwiGLU](/blogs/swiglu/) and [two KV heads](/blogs/gqa-and-kv-cache/), through [SDPA](/blogs/sdpa-and-flashattention/), with [pre-norm](/blogs/residual-placement/) residuals. Width {model.d_model}, {model.n_layers} layers, {model.n_heads} query heads, a {model.context_length}-token context and the 8,192-entry [TinyStories tokenizer](/blogs/tinystories-and-the-encoder/).
 
 <Figure label="Playground" caption="The Day 4 config, read from configs/day4.toml. The dry run reports 26,255,872 parameters, and so does this counter. Switch to Day 1 to compare.">
   <ParameterCounter client:visible presets={presets} />
@@ -133,7 +133,7 @@ The exit check asked for a flattened curve, and this one qualifies. Decision, ke
 
 ## The same run on a different machine
 
-Two numbers say Kaggle reproduced the Colab path. The step-1,000 validation loss was {f(first.validation_loss)}, the same to four places as the Colab float16 run in [EXP-066](/posts/mixed-precision/), {colab["validation loss"]}. Same seed and same data order gave the same result on a different machine.
+Two numbers say Kaggle reproduced the Colab path. The step-1,000 validation loss was {f(first.validation_loss)}, the same to four places as the Colab float16 run in [EXP-066](/blogs/mixed-precision/), {colab["validation loss"]}. Same seed and same data order gave the same result on a different machine.
 
 The speed matched too. The whole run took {n(last.elapsed_seconds)} seconds for {n(last.step)} steps, {perStep.toFixed(3)} seconds per step, against {colabPerStep.toFixed(3)} on Colab. That's {n(tokensPerSecond)} tokens per second, or about {tflops.toFixed(1)} TFLOPs at 6 FLOPs per parameter per token. The 4.2-hour estimate held.
 

@@ -39,7 +39,7 @@ export const testsPassed = testsTried(eval0).filter((r) => r.success).length + t
 export const testsRuns = testsTried(eval0).length + testsTried(eval1).length;
 export const range = (s) => Math.max(...s.pass_1_per_seed) - Math.min(...s.pass_1_per_seed);
 
-The [scripted traces](/posts/scripted-traces/) show Qwen reading before it answers and writing valid JSON. Now we train on them with [LoRA](/posts/lora-from-scratch/) and rerun the [Day 7 eval](/posts/the-day7-eval/) with nothing changed. It uses the same {day7.tasks.length} tasks, the same three sampling seeds and the same limits.
+The [scripted traces](/blogs/scripted-traces/) show Qwen reading before it answers and writing valid JSON. Now we train on them with [LoRA](/blogs/lora-from-scratch/) and rerun the [Day 7 eval](/blogs/the-day7-eval/) with nothing changed. It uses the same {day7.tasks.length} tasks, the same three sampling seeds and the same limits.
 
 <Label>Setup</Label>
 

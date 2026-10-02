@@ -1,0 +1,120 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import Callout from "../../components/Callout.astro";
+import Chip from "../../components/Chip.astro";
+
+export async function getStaticPaths() {
+  const posts = (await getCollection("posts")).sort((a, b) => a.data.day - b.data.day || a.data.order - b.data.order);
+  return posts.map((post, index) => ({
+    params: { slug: post.id },
+    props: { post, previous: posts[index - 1], next: posts[index + 1] },
+  }));
+}
+
+const { post, previous, next } = Astro.props;
+const { Content } = await render(post);
+const { title, description, day, exps, draft, measured } = post.data;
+const dd = String(day).padStart(2, "0");
+---
+
+<Base title={`${title} · octlm`} description={description}>
+  <div class="progress" aria-hidden="true" />
+  <article class="article prose tint hue-gray">
+    <header class="post-header">
+      <div class="post-meta">
+        <a class="day-chip" href={`/blogs/#day-${day}`}><span class="dot" aria-hidden="true" />Day {dd}</a>
+        {exps.length > 0 && <span class="label">{exps.join(" · ")}</span>}
+      </div>
+      <h1>{title}</h1>
+      <p class="lede">{description}</p>
+      <div class="chips">
+        {draft && <Chip hue="blue">Draft</Chip>}
+        {!measured && <Chip hue={day === 3 ? "purple" : "orange"}>{day === 3 ? "Plan switched" : "Result pending"}</Chip>}
+      </div>
+    </header>
+    {!measured && day === 3 && (
+      <Callout hue="purple" title="Why the plan switched">
+        <p>Day 2's 3.3M-parameter models saw only 819,200 tokens each. The planned Day 3 runs would still have been too short to separate most architecture effects from seed noise. We kept the tested implementations, trained a larger TinyStories model on Day 4, and moved tool-use work to an instruction-following checkpoint. This experiment's GPU comparison was withdrawn; some ideas moved to Day 5. <a href="/blogs/why-the-plan-changed/">Read the numbers and the full decision</a>.</p>
+      </Callout>
+    )}
+    {!measured && day !== 3 && (
+      <Callout hue="orange" title="Trained result pending">
+        <p>The planned trained-model measurement has no accepted result yet. The post distinguishes implemented code, local checks and any earlier measured baseline.</p>
+      </Callout>
+    )}
+    {draft && (
+      <Callout hue="blue" title="Draft">
+        <p>This post is an outline. It fills in when the experiment runs.</p>
+      </Callout>
+    )}
+    <Content />
+    <nav class="series wide" aria-label="Series">
+      {previous ? <a class="series-link" href={`/blogs/${previous.id}/`}><span class="label">Previous</span><span>{previous.data.title}</span></a> : <span />}
+      {next && <a class="series-link end" href={`/blogs/${next.id}/`}><span class="label">Next</span><span>{next.data.title}</span></a>}
+    </nav>
+  </article>
+</Base>
+
+<style>
+  .progress {
+    position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 10;
+    background: var(--signal); transform-origin: left; transform: scaleX(0);
+  }
+  @supports (animation-timeline: scroll()) {
+    .progress { animation: grow linear both; animation-timeline: scroll(root); }
+    @keyframes grow { to { transform: scaleX(1); } }
+  }
+  .post-meta {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px;
+  }
+  .day-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink); text-decoration: none;
+  }
+  .day-chip .dot { width: 6px; height: 6px; background: var(--signal); transition: transform var(--fast) var(--ease); }
+  .day-chip:hover .dot { transform: translateX(-3px); }
+  .post-header > * { animation: rise 520ms var(--ease) both; }
+  .post-header > :nth-child(2) { animation-delay: 60ms; }
+  .post-header > :nth-child(3) { animation-delay: 120ms; }
+  .post-header > :nth-child(4) { animation-delay: 180ms; }
+  @keyframes rise { from { opacity: 0; } }
+  .post-header { padding: clamp(40px, 7vw, 96px) 0 clamp(32px, 5vw, 64px); }
+  .post-header h1 {
+    font-size: clamp(40px, 5.6vw, 62px);
+    line-height: 1.02;
+    letter-spacing: -0.012em;
+    margin: clamp(28px, 4vw, 48px) 0 24px;
+    text-wrap: balance;
+  }
+  .lede { font-size: 18px; line-height: 1.6; color: var(--ink-2); margin: 0 0 24px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .series {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 112px;
+  }
+  .series-link {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px 22px 24px;
+    border-radius: var(--r-figure);
+    background: var(--surface);
+    text-decoration: none;
+    font-family: var(--font-display);
+    font-size: 21px;
+    line-height: 1.15;
+    transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .series-link:hover { background: var(--surface-2); }
+  .series-link.end { text-align: right; grid-column: 2; }
+  .series-link.end .label { justify-content: end; }
+  @media (max-width: 720px) {
+    .lede { font-size: 17.5px; }
+    .series { grid-template-columns: 1fr; }
+    .series-link.end { grid-column: 1; }
+  }
+</style>

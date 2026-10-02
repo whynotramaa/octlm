@@ -1,0 +1,986 @@
+[
+  {
+    "id": "g-bug-due-plus",
+    "prompt": "Loans report more days left the longer a book is out. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/loans.py",
+        "old": "MAX_DAYS - days_out",
+        "new": "MAX_DAYS + days_out"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-fine-double",
+    "prompt": "Late fines come out twice as high as they should. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/loans.py",
+        "old": "days_late) * FINE_PER_DAY",
+        "new": "days_late) * FINE_PER_DAY * 2"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-fine-floor",
+    "prompt": "Members are fined even when a book is not late. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/loans.py",
+        "old": "max(0, days_late)",
+        "new": "max(1, days_late)"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-borrow-default",
+    "prompt": "Members can borrow one book more than the default limit allows. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/loans.py",
+        "old": "limit=5",
+        "new": "limit=6"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-history",
+    "prompt": "shelf_size gives the wrong count for the history shelf. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/catalog.py",
+        "old": "\"history\": 45",
+        "new": "\"history\": 44"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-small-default",
+    "prompt": "small_shelves no longer lists the poetry shelf. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/catalog.py",
+        "old": "def small_shelves(limit=10)",
+        "new": "def small_shelves(limit=5)"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-label-brackets",
+    "prompt": "label puts the wrong brackets around the shelf name. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/catalog.py",
+        "old": "[{shelf}]\"",
+        "new": "({shelf})\""
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-add-replace",
+    "prompt": "add_books replaces a shelf's count instead of adding to it. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/catalog.py",
+        "old": "SHELVES[name] = SHELVES.get(name, 0) + count",
+        "new": "SHELVES[name] = count"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-join-swap",
+    "prompt": "Roster.names returns ids instead of names. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/members.py",
+        "old": "self.members[member_id] = name",
+        "new": "self.members[name] = member_id"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/members.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/members.py",
+            "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-leave-wrong",
+    "prompt": "Roster.leave removes the wrong member. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/members.py",
+        "old": "self.members.pop(member_id, None)",
+        "new": "self.members.pop(member_id + 1, None)"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/members.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/members.py",
+            "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-title-split",
+    "prompt": "format_title keeps repeated spaces between words. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/text.py",
+        "old": "title.split()",
+        "new": "title.split(\" \")"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/text.py",
+            "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-initials-last",
+    "prompt": "initials uses the last letter of each name part. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/text.py",
+        "old": "part[0].upper()",
+        "new": "part[-1].upper()"
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/text.py",
+            "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-bug-shorten-dots",
+    "prompt": "shorten ends long text with the wrong number of dots. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+    "setup": [
+      {
+        "path": "library/text.py",
+        "old": "+ \"...\"",
+        "new": "+ \"..\""
+      }
+    ],
+    "check": {
+      "kind": "tests"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/text.py",
+            "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Fixed."
+    }
+  },
+  {
+    "id": "g-renewals",
+    "prompt": "Add a function renewals_left(count) to library/loans.py that returns 3 minus count, but never less than 0. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_renewals_left.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n\n\ndef renewals_left(count):\n    return max(0, 3 - count)\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-fine-capped",
+    "prompt": "Add a function fine_capped(days_late, cap=5.0) to library/loans.py that returns fine(days_late) but never more than cap. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_fine_capped.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/loans.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/loans.py",
+            "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n\n\ndef fine_capped(days_late, cap=5.0):\n    return min(fine(days_late), cap)\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-count-letter",
+    "prompt": "Add a function count_letter(text, letter) to library/text.py that counts how often letter appears in text, ignoring case. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_count_letter.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/text.py",
+            "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n\n\ndef count_letter(text, letter):\n    return text.lower().count(letter.lower())\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-pad-left",
+    "prompt": "Add a function pad_left(text, width) to library/text.py that adds spaces on the left until text is width characters long. Longer text comes back unchanged. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_pad_left.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/text.py",
+            "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n\n\ndef pad_left(text, width):\n    return text.rjust(width)\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-largest-shelf",
+    "prompt": "Add a function largest_shelf() to library/catalog.py that returns the name of the shelf with the most books. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_largest_shelf.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n\n\ndef largest_shelf():\n    return max(SHELVES, key=SHELVES.get)\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-remove-books",
+    "prompt": "Add a function remove_books(name, count) to library/catalog.py that lowers a shelf's count by count, never below 0, and returns the new count. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_remove_books.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/catalog.py",
+            "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n\n\ndef remove_books(name, count):\n    SHELVES[name] = max(0, SHELVES.get(name, 0) - count)\n    return SHELVES[name]\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-roster-ids",
+    "prompt": "Add an ids() method to Roster in library/members.py that returns the member ids in sorted order. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_roster_ids.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/members.py"
+          }
+        },
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/members.py",
+            "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n\n    def ids(self):\n        return sorted(self.members)\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-weeks",
+    "prompt": "Create library/dates.py with a function weeks(days) that returns the number of whole weeks in days. Keep the existing tests passing.",
+    "check": {
+      "kind": "hidden",
+      "test": "test_weeks.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "write_file",
+          "arguments": {
+            "path": "library/dates.py",
+            "content": "def weeks(days):\n    return days // 7\n"
+          }
+        },
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ],
+      "answer": "Done."
+    }
+  },
+  {
+    "id": "g-year-1997",
+    "prompt": "Which book in data/books.csv was published in 1997? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "Odyssey"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "data/books.csv"
+          }
+        }
+      ],
+      "answer": "Odyssey"
+    }
+  },
+  {
+    "id": "g-cork",
+    "prompt": "Which member lives in Cork? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "Milo"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "data/members.csv"
+          }
+        }
+      ],
+      "answer": "Milo"
+    }
+  },
+  {
+    "id": "g-austen-isbn",
+    "prompt": "Who wrote the book with ISBN 9780679783268? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "Austen"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "data/books.csv"
+          }
+        }
+      ],
+      "answer": "Austen"
+    }
+  },
+  {
+    "id": "g-member-5",
+    "prompt": "What is the name of member 5 in the members data? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "Noor"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "data/members.csv"
+          }
+        }
+      ],
+      "answer": "Noor"
+    }
+  },
+  {
+    "id": "g-max-days-section",
+    "prompt": "Which section of config/app.ini sets max_days? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "loans"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "config/app.ini"
+          }
+        }
+      ],
+      "answer": "loans"
+    }
+  },
+  {
+    "id": "g-shelf-count",
+    "prompt": "How many shelves does SHELVES define in the catalog module? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "4",
+      "derived": true
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        }
+      ],
+      "answer": "4"
+    }
+  },
+  {
+    "id": "g-biggest-shelf",
+    "prompt": "Which shelf in the catalog module holds the most books? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "fiction"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/catalog.py"
+          }
+        }
+      ],
+      "answer": "fiction"
+    }
+  },
+  {
+    "id": "g-capitalize",
+    "prompt": "Which string method does format_title use on each word? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "capitalize"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/text.py"
+          }
+        }
+      ],
+      "answer": "capitalize"
+    }
+  },
+  {
+    "id": "g-member-tests",
+    "prompt": "How many test methods does tests/test_members.py define? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "4",
+      "derived": true
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "tests/test_members.py"
+          }
+        }
+      ],
+      "answer": "4"
+    }
+  },
+  {
+    "id": "g-fine-module",
+    "prompt": "Which file defines FINE_PER_DAY? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "loans.py"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "grep",
+          "arguments": {
+            "pattern": "FINE_PER_DAY"
+          }
+        }
+      ],
+      "answer": "loans.py"
+    }
+  },
+  {
+    "id": "g-join-error",
+    "prompt": "Which exception does Roster.join raise for an id below 1? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "ValueError"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "library/members.py"
+          }
+        }
+      ],
+      "answer": "ValueError"
+    }
+  },
+  {
+    "id": "g-graz",
+    "prompt": "Which member lives in Graz? Reply with the answer.",
+    "check": {
+      "kind": "answer",
+      "expected": "Lena"
+    },
+    "solution": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "data/members.csv"
+          }
+        }
+      ],
+      "answer": "Lena"
+    }
+  }
+]

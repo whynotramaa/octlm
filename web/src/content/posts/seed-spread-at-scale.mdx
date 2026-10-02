@@ -38,13 +38,13 @@ Each dot is one possible validation score. The **modern improvement** slider mov
 
 What does a seed actually change ? The initial weights, the order of the training blocks, and the other random draws. All six real runs use the same tokenizer, the same held-out blocks, batch shape, step count and training procedure. So this range is a practical noise floor for this exact setup, not some universal confidence interval.
 
-On Day 2 the baseline range on code was 0.043 bits per byte. Those models saw 819,200 tokens each, roughly 0.25 tokens per parameter, which is basically nothing. [The grid](/posts/reading-the-grid/) shows why those decimals couldn't settle most choices. And the planned Day 3 budget would still have left the models badly undertrained, so [the plan changed](/posts/why-the-plan-changed/).
+On Day 2 the baseline range on code was 0.043 bits per byte. Those models saw 819,200 tokens each, roughly 0.25 tokens per parameter, which is basically nothing. [The grid](/blogs/reading-the-grid/) shows why those decimals couldn't settle most choices. And the planned Day 3 budget would still have left the models badly undertrained, so [the plan changed](/blogs/why-the-plan-changed/).
 
 <Label>The control</Label>
 
 ## Same data and same budget for both stacks
 
-The `baseline` stack uses learned positions, LayerNorm, GELU and eight separate key-value heads. The `modern` stack uses [RoPE](/posts/rope/), [RMSNorm](/posts/rmsnorm/), [SwiGLU](/posts/swiglu/) and two grouped key-value heads. Both use PyTorch's [scaled dot product attention](/posts/sdpa-and-flashattention/), and we keep that kernel the same on purpose, so an attention backend difference can't sneak in and pretend to be an architecture result.
+The `baseline` stack uses learned positions, LayerNorm, GELU and eight separate key-value heads. The `modern` stack uses [RoPE](/blogs/rope/), [RMSNorm](/blogs/rmsnorm/), [SwiGLU](/blogs/swiglu/) and two grouped key-value heads. Both use PyTorch's [scaled dot product attention](/blogs/sdpa-and-flashattention/), and we keep that kernel the same on purpose, so an attention backend difference can't sneak in and pretend to be an architecture result.
 
 The baseline has 29,639,680 parameters and modern has 26,255,872, the baseline is bigger because of full multi-head attention. So to be honest this is a **stack comparison**, not a parameter-matched ablation. It tells us which stack does better under this budget, it can't tell us which of the four changes caused the gap. For that you'd go back to Day 2's single-change experiments, with their noise problem attached.
 
@@ -103,7 +103,7 @@ And here's the catch. Modern took 0.625 seconds per step against the baseline's 
 
 The likely cause is the attention kernel. PyTorch 2.10's [SDPA documentation](https://docs.pytorch.org/docs/2.10/generated/torch.nn.functional.scaled_dot_product_attention.html) says grouped-query attention only works with the Flash and math kernels. Flash needs a newer GPU than the T4, so modern's two KV heads probably push it onto the slow math kernel, while the baseline's eight heads get to keep the memory-efficient one. SwiGLU and RoPE add a bit of cost too. But that's a lead, not a measurement, I haven't profiled it. Day 4's 0.614 seconds per step would carry the same cost.
 
-[EXP-070](/posts/mtp-at-the-day4-scale/) now has its control mean of 0.5539 and its 0.0050 threshold.
+[EXP-070](/blogs/mtp-at-the-day4-scale/) now has its control mean of 0.5539 and its 0.0050 threshold.
 
 <Callout hue="gray" title="Sources">
   <p><a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">PyTorch's reproducibility note</a> explains why a seed result is tied to a device and software version. <a href="https://arxiv.org/abs/2305.13245">Ainslie et al.</a> define the grouped-query choice in the modern stack. Experiment settings and the decision are in <code>notes/day5.md</code>, the six measured rows are <code>runs/kaggle-day5-spread/day5/seed-spread.jsonl</code>, and the 24,000-step reference curve is <code>runs/kaggle-day4/day4/metrics.jsonl</code>.</p>

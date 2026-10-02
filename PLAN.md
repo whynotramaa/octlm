@@ -167,6 +167,15 @@ Pick at most one.
 - Route tasks the local model fails to an external API, and log cost and success against local-only
   handling.
 
+Chosen on 2026-10-02: GRPO. `notes/day9.md` records why the pool is a new task split.
+
+- EXP-084. GRPO task pool and probe. Measure how many tasks give a mixed group of rollouts.
+- EXP-085. GRPO training. Group-relative advantages from the task check, no KL, token-level loss.
+- EXP-086. Held-out eval. Rerun the Day 7 eval on the GRPO adapter against its SFT start.
+
+Exit check. The GRPO adapter beats its SFT start on Day 7 pass^1 by more than the Day 8 gap
+between training seeds, or the note records why it did not.
+
 ## What was dropped
 
 - MoE, MLA, sparse and compressed attention, Muon, mHC, and the DeepSeek-style runs. None of them

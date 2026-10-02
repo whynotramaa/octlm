@@ -59,7 +59,7 @@ The running vector $x$ is called the residual stream. And the addition actually 
 
 <Source file="octlm/model.py" symbol="TransformerBlock" />
 
-The norm sits inside the branch, before attention and before the feed-forward layer. That's called pre-norm. The 2017 paper put it after the addition, which is post-norm, and Day 2 tested that choice in [where the norm goes](/posts/residual-placement/).
+The norm sits inside the branch, before attention and before the feed-forward layer. That's called pre-norm. The 2017 paper put it after the addition, which is post-norm, and Day 2 tested that choice in [where the norm goes](/blogs/residual-placement/).
 
 <Label>LayerNorm</Label>
 
@@ -84,7 +84,7 @@ The statistics come from the $C$ features of one vector. They never mix position
 - "Double every entry" also leaves it unchanged, LayerNorm removes any scale.
 - The order of the entries survives. Bigger inputs stay bigger.
 
-Without a norm, activations can grow block by block, and softmax and the feed-forward layer behave differently at different scales. The norm gives every block an input at the same scale. Day 2 compares this with [RMSNorm](/posts/rmsnorm/), which drops the mean.
+Without a norm, activations can grow block by block, and softmax and the feed-forward layer behave differently at different scales. The norm gives every block an input at the same scale. Day 2 compares this with [RMSNorm](/blogs/rmsnorm/), which drops the mean.
 
 <Label>Feed-forward</Label>
 
@@ -106,7 +106,7 @@ GELU is basically a smooth ReLU. It weights each input by the probability that a
 
 <Source file="octlm/model.py" symbol="FeedForward" />
 
-With `feed_forward = "gelu"` this is the Day 1 layer. The `gate` branch is [SwiGLU](/posts/swiglu/), added on Day 2.
+With `feed_forward = "gelu"` this is the Day 1 layer. The `gate` branch is [SwiGLU](/blogs/swiglu/), added on Day 2.
 
 <Label>The output head</Label>
 

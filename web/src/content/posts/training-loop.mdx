@@ -48,7 +48,7 @@ The trainer encodes each document with `<|bos|>` at the start and `<|eos|>` at t
 
 <Source file="octlm/train.py" symbol="make_blocks" />
 
-The third tensor, `byte_lengths`, records how many bytes each target token decodes to. [Bits per byte](/posts/next-token-prediction/) needs it, and we compute it once here instead of at every evaluation.
+The third tensor, `byte_lengths`, records how many bytes each target token decodes to. [Bits per byte](/blogs/next-token-prediction/) needs it, and we compute it once here instead of at every evaluation.
 
 Each step draws a batch of blocks with a seeded generator. Day 1 uses 8 blocks of 128 tokens, so one step sees 1,024 target tokens.
 
@@ -159,7 +159,7 @@ The note is careful about what this proves. The tokenizer, the causal model, the
 ## What we didn't build, and why
 
 - **Learning-rate search.** Day 1 took common values, 3e-4 with a floor of 3e-5. Nothing in the results pointed at the learning rate.
-- **Gradient accumulation and mixed precision.** Day 1 batches fit in CPU memory in float32. Mixed precision came on [Day 4](/posts/mixed-precision/).
+- **Gradient accumulation and mixed precision.** Day 1 batches fit in CPU memory in float32. Mixed precision came on [Day 4](/blogs/mixed-precision/).
 - **Resume across machines.** Bit-exact resume holds on one device. A resumed GPU run is expected to drift a little, and Day 4 doesn't claim otherwise.
 
 <Callout hue="gray" title="Sources">

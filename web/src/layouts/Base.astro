@@ -1,5 +1,7 @@
 ---
 import "@fontsource-variable/plus-jakarta-sans";
+import "@fontsource/instrument-serif/400.css";
+import "@fontsource-variable/jetbrains-mono";
 import "katex/dist/katex.min.css";
 import "../styles/global.css";
 import "../styles/widgets.css";
@@ -20,7 +22,7 @@ const path = Astro.url.pathname;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23121214'/><circle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5'/></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23141413'/><g fill='%2366655f'><circle cx='9' cy='9' r='2'/><circle cx='16' cy='9' r='2'/><circle cx='23' cy='9' r='2'/><circle cx='9' cy='16' r='2'/><circle cx='16' cy='16' r='2'/><circle cx='9' cy='23' r='2'/><circle cx='16' cy='23' r='2'/><circle cx='23' cy='16' r='2'/></g><circle cx='23' cy='23' r='2.6' fill='%23e0552a'/></svg>" />
     <script is:inline>
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) document.documentElement.classList.add("js");
       try {
@@ -31,10 +33,11 @@ const path = Astro.url.pathname;
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="/">octlm</a>
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>octlm</a>
       <nav>
-        <a href="/" aria-current={path === "/" ? "page" : undefined}>Posts</a>
+        <a href="/blogs/" aria-current={path.startsWith("/blogs") ? "page" : undefined}>Blog</a>
         <a href="/roadmap/" aria-current={path.startsWith("/roadmap") ? "page" : undefined}>Roadmap</a>
+        <a class="gh" href="https://github.com/whynotramaa/octlm">GitHub</a>
         <button class="theme" type="button" aria-label="Toggle dark mode">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
             <circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" />
@@ -46,8 +49,9 @@ const path = Astro.url.pathname;
       <slot />
     </main>
     <footer class="site-footer">
-      <span>octlm, a from-scratch language model lab.</span>
-      <span>Measured numbers name their source; playground examples are labeled.</span>
+      <span class="colophon"><span class="brand-mark" aria-hidden="true"></span>octlm</span>
+      <span>A from-scratch language model lab, 2026.</span>
+      <span>Measured numbers name their source. Playground examples are labeled.</span>
     </footer>
     <script>
       const reveal = new IntersectionObserver((entries) => {
@@ -75,57 +79,73 @@ const path = Astro.url.pathname;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: calc(var(--wide) + 2 * var(--gutter));
+    max-width: calc(var(--page) + 2 * var(--gutter));
     margin: 0 auto;
-    padding: 22px var(--gutter);
+    padding: 20px var(--gutter);
   }
-  .brand {
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    font-size: 18px;
+  .brand, .colophon {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.01em;
     text-decoration: none;
+    color: var(--ink);
   }
-  nav { display: flex; align-items: center; gap: 4px; }
+  .brand-mark {
+    width: 13px;
+    height: 13px;
+    background:
+      radial-gradient(circle, var(--signal) 1.6px, transparent 2px) 100% 100% / 6.5px 6.5px no-repeat,
+      radial-gradient(circle, var(--ink-3) 1.3px, transparent 1.7px) 0 0 / 6.5px 6.5px;
+  }
+  .brand { transition: opacity var(--fast) var(--ease); }
+  .brand:hover { opacity: 0.7; }
+  nav { display: flex; align-items: center; gap: 2px; }
   nav a {
     text-decoration: none;
     color: var(--ink-2);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
     padding: 6px 12px;
     border-radius: var(--r-control);
     transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
   }
   nav a:hover { color: var(--ink); background: var(--surface-2); }
-  nav a[aria-current="page"] { color: var(--ink); }
+  nav a:active { scale: 0.96; }
+  nav a[aria-current="page"] { color: var(--ink); text-decoration: underline 1px var(--signal); text-underline-offset: 8px; }
+  @media (max-width: 420px) { .gh { display: none; } }
   .theme {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
-    margin-left: 6px;
+    width: 34px;
+    height: 34px;
+    margin-left: 8px;
     border: 1px solid var(--line);
     border-radius: var(--r-control);
-    background: var(--surface);
+    background: transparent;
     color: var(--ink-2);
     cursor: pointer;
     transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
   }
   .theme:hover { color: var(--ink); border-color: var(--line-2); }
-  .theme svg { transition: transform var(--slow) var(--ease); }
-  .theme:hover svg { transform: rotate(180deg); }
   .theme:active { transform: scale(0.92); }
-  .brand { transition: opacity var(--fast) var(--ease); }
-  .brand:hover { opacity: 0.7; }
   .site-footer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 24px;
-    justify-content: space-between;
-    max-width: calc(var(--wide) + 2 * var(--gutter));
-    margin: 120px auto 0;
-    padding: 32px var(--gutter) 48px;
-    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px 32px;
+    align-items: center;
+    max-width: calc(var(--page) + 2 * var(--gutter));
+    margin: 160px auto 0;
+    padding: 28px var(--gutter) 48px;
     color: var(--ink-3);
-    font-size: 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  @media (max-width: 720px) {
+    .site-footer { grid-template-columns: 1fr; margin-top: 112px; }
   }
 </style>

@@ -151,7 +151,7 @@ Day 2 replaced this path with PyTorch's fused attention kernel, which never stor
 
 - **Pictures of a trained model's attention.** The Day 1 model had 541,952 parameters and trained for 200 steps on one block. Its attention patterns would just be noise. The Day 4 model is big enough and trained long enough to be worth looking at.
 - **Dropout on the attention weights.** The layer supports it, but every config so far sets `dropout = 0.0`. At these data sizes the models are undertrained, not overfit.
-- **A KV cache on Day 1.** This first generator recomputes the whole sequence. [Day 5's cached generator](/posts/kv-cache-in-practice/) matched every greedy token and ran 10.6 to 15.8 percent faster on the trained model in single T4 timings.
+- **A KV cache on Day 1.** This first generator recomputes the whole sequence. [Day 5's cached generator](/blogs/kv-cache-in-practice/) matched every greedy token and ran 10.6 to 15.8 percent faster on the trained model in single T4 timings.
 - **Cross-attention.** An encoder-decoder model attends from one sequence to another. octlm is decoder-only, so every attention layer is self-attention.
 
 <Callout hue="gray" title="Sources">

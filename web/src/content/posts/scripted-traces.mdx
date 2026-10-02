@@ -24,7 +24,7 @@ export const base = baseRows.at(-1);
 export const int = (value) => Math.round(value).toLocaleString("en-US");
 export const kinds = Object.entries(summary.by_kind);
 
-[LoRA](/posts/lora-from-scratch/) makes fine-tuning fit on a T4. Now we need something to fine-tune on: transcripts where a model reads the repository, calls tools in the right format, and finishes the task. This post builds {summary.tasks} of them.
+[LoRA](/blogs/lora-from-scratch/) makes fine-tuning fit on a T4. Now we need something to fine-tune on: transcripts where a model reads the repository, calls tools in the right format, and finishes the task. This post builds {summary.tasks} of them.
 
 <Label>Where traces come from</Label>
 
@@ -32,10 +32,10 @@ export const kinds = Object.entries(summary.by_kind);
 
 The plan offered two sources. Neither works here.
 
-- **Filtered runs of the base model.** Run Qwen on training tasks and keep the runs that pass. The base model scores pass^1 {base.pass_1_mean.toFixed(3)} on the [Day 7 eval](/posts/the-day7-eval/). At that rate, {summary.tasks} training tasks would yield about two passing runs.
+- **Filtered runs of the base model.** Run Qwen on training tasks and keep the runs that pass. The base model scores pass^1 {base.pass_1_mean.toFixed(3)} on the [Day 7 eval](/blogs/the-day7-eval/). At that rate, {summary.tasks} training tasks would yield about two passing runs.
 - **A stronger model through an API.** Anthropic's [Commercial Terms](https://www.anthropic.com/legal/commercial-terms), section D.4, forbid using the service "to build a competing product or service, including to train competing AI models". A larger open Qwen would work legally, but it needs another architecture check and GPU hours just to generate data.
 
-So octlm takes a third route. Every training task already has a reference solution written as tool calls, because [task validation](/posts/the-day7-eval/) needs one. A scripted expert replays that solution through the real harness tools, in a fresh sandbox, and records what happened as a conversation. That's behavior cloning from a hand-written policy. It costs no GPU time and raises no license question.
+So octlm takes a third route. Every training task already has a reference solution written as tool calls, because [task validation](/blogs/the-day7-eval/) needs one. A scripted expert replays that solution through the real harness tools, in a fresh sandbox, and records what happened as a conversation. That's behavior cloning from a hand-written policy. It costs no GPU time and raises no license question.
 
 <Label>Two rules</Label>
 

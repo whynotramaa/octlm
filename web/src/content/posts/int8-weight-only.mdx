@@ -28,7 +28,7 @@ The Day 4 model uses float16 on a T4, so every float16 projection weight takes t
 
 ## Float16 was already a compression step
 
-[The mixed-precision experiment](/posts/mixed-precision/) first moved matrix operations from float32 to float16. The T4 ran it faster and the validation loss matched the float32 control, and it halved the bytes per floating-point weight. Int8 starts from that float16 inference model and tries to halve the projection-weight payload again. This is an inference storage change, not a training recipe, the optimizer and gradients stay in the training checkpoint.
+[The mixed-precision experiment](/blogs/mixed-precision/) first moved matrix operations from float32 to float16. The T4 ran it faster and the validation loss matched the float32 control, and it halved the bytes per floating-point weight. Int8 starts from that float16 inference model and tries to halve the projection-weight payload again. This is an inference storage change, not a training recipe, the optimizer and gradients stay in the training checkpoint.
 
 The model has 26,255,872 parameters. Its attention and feed-forward linear layers hold 22,052,864 weights in 36,224 output rows. The tied token embedding and output matrix holds 4,194,304 weights, and octlm leaves that one in float16, because quantizing a tied matrix opens a whole separate quality and implementation question. Norm gains also stay floating point.
 
@@ -66,7 +66,7 @@ Just from parameter counts, the 22,052,864 projection weights take about 42.1 Mi
 
 ## Size, quality and decode speed have to be measured together
 
-`octlm.day5 quant` loads the trained Day 4 checkpoint, evaluates the same held-out blocks before and after conversion, and saves two inference-only state dictionaries. Then it measures 256 generated tokens with the same [KV-cached generator](/posts/kv-cache-in-practice/), prefill included, for both variants. The output records model bytes, tokens per second and the bits-per-byte change.
+`octlm.day5 quant` loads the trained Day 4 checkpoint, evaluates the same held-out blocks before and after conversion, and saves two inference-only state dictionaries. Then it measures 256 generated tokens with the same [KV-cached generator](/blogs/kv-cache-in-practice/), prefill included, for both variants. The output records model bytes, tokens per second and the bits-per-byte change.
 
 <Source file="octlm/day5.py" symbol="stage_quant" />
 

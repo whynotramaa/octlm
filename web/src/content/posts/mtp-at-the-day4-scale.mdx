@@ -39,7 +39,7 @@ The second head needs its own transformation, and this one is easy to get wrong.
 
 Day 2's 3.3M models trained on just 819,200 tokens. Day 3 planned more tokens but still way less than a data-efficient run. We built and tested the MTP implementation, and then the architecture lab stopped before its GPU stage. So there is no Day 3 quality result or draft-agreement result to carry forward, nothing. The paper says MTP gains grow with model size, and that's a reason to test at 26M, not a prediction that this model will win.
 
-Day 5 uses the three modern seeds from [EXP-069](/posts/seed-spread-at-scale/) as the control. MTP runs the same three seeds, same tokenizer, same TinyStories token stream, 512-token context, 6,000 steps and the same held-out blocks. The only planned change is `mtp_depth = 2`. EXP-069 finished on 2026-09-30 and froze the threshold before any MTP run started, modern's control mean is 0.5539 bits per byte and the larger seed spread is **0.0050**. So MTP has to beat 0.5539 by more than 0.0050 to count. We fix the number first so we can't pick a threshold after seeing the MTP results.
+Day 5 uses the three modern seeds from [EXP-069](/blogs/seed-spread-at-scale/) as the control. MTP runs the same three seeds, same tokenizer, same TinyStories token stream, 512-token context, 6,000 steps and the same held-out blocks. The only planned change is `mtp_depth = 2`. EXP-069 finished on 2026-09-30 and froze the threshold before any MTP run started, modern's control mean is 0.5539 bits per byte and the larger seed spread is **0.0050**. So MTP has to beat 0.5539 by more than 0.0050 to count. We fix the number first so we can't pick a threshold after seeing the MTP results.
 
 <Source file="octlm/day5.py" symbol="stage_mtp" />
 

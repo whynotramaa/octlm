@@ -1,7 +1,6 @@
 ---
 import { getCollection } from "astro:content";
 import Base from "../layouts/Base.astro";
-import Chip from "../components/Chip.astro";
 import { retired, roadmap } from "../lib/roadmap.ts";
 import { STATUS } from "../lib/status.ts";
 
@@ -10,32 +9,17 @@ const gone = retired();
 const posts = await getCollection("posts");
 const postFor = (id: string) => posts.find((post) => post.data.exps.some((exp) => id.startsWith(exp)));
 const title = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-const counts = days.flatMap((day) => day.experiments).reduce<Record<string, number>>((acc, exp) => {
-  acc[exp.status] = (acc[exp.status] ?? 0) + 1;
-  return acc;
-}, {});
 ---
 
 <Base title="Roadmap · octlm" description="Every experiment in octlm, from the first tokenizer to the tool-use fine-tune, with its status.">
-  <div class="article">
-    <section class="hero">
-      <div class="label">Roadmap</div>
-      <h1>Nine days, one experiment at a time.</h1>
-      <p>
-        This page reads <code>PLAN.md</code> and the day notes at build time. <a href="/posts/why-the-plan-changed/">Day 3's planned runs were withdrawn</a> when the training budget proved too small; Day 5 stays open until each experiment's exit check passes.
-        Days 1 to 3 followed the first plan. Days 4 to 9 follow the plan written on 2026-09-23.
-      </p>
-      <div class="legend">
-        {Object.entries(STATUS).map(([key, status]) => (
-          <Chip hue={status.hue}>{status.label} · {counts[key] ?? 0}</Chip>
-        ))}
-      </div>
-    </section>
-
+  <div class="roadmap">
     <ol class="days">
       {days.map((day) => (
         <li class="day">
-          <div class="day-rail"><span class="day-number">{day.day}</span></div>
+          <div class="day-head">
+            <span class="label">Day</span>
+            <span class="day-number">{String(day.day).padStart(2, "0")}</span>
+          </div>
           <div class="day-body">
             <h2>{title(day.title)}</h2>
             {day.experiments.length === 0 && <p class="muted">Pick at most one extension. Not scheduled yet.</p>}
@@ -45,8 +29,8 @@ const counts = days.flatMap((day) => day.experiments).reduce<Record<string, numb
                 return (
                   <li>
                     <code class="exp-id">{exp.id}</code>
-                    <span class="exp-title">{post ? <a href={`/posts/${post.id}/`}>{title(exp.title)}</a> : title(exp.title)}</span>
-                    <Chip hue={STATUS[exp.status].hue}>{STATUS[exp.status].label}</Chip>
+                    <span class="exp-title">{post ? <a href={`/blogs/${post.id}/`}>{title(exp.title)}</a> : title(exp.title)}</span>
+                    <span class="exp-status"><i class={`s s-${exp.status}`} />{STATUS[exp.status].label}</span>
                   </li>
                 );
               })}
@@ -57,68 +41,66 @@ const counts = days.flatMap((day) => day.experiments).reduce<Record<string, numb
     </ol>
 
     <section class="retired">
-      <div class="label">Retired</div>
-      <h2>Where the first plan's experiments went</h2>
-      <p class="muted">The first plan had 64 experiments. When it changed, each one was kept, renumbered, folded in or dropped. This table comes from <code>notes/day3.md</code>.</p>
-      <table>
-        <thead><tr><th>First plan</th><th>Now</th></tr></thead>
-        <tbody>
-          {gone.map((row) => (
-            <tr>
-              <td>{row.first}</td>
-              <td class:list={{ dropped: row.now.startsWith("Dropped") }}>{row.now}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div class="day-head"><span class="label">Retired</span></div>
+      <div>
+        <h2>Where the first plan's experiments went</h2>
+        <p class="muted">The first plan had 64 experiments. When it changed, each one was kept, renumbered, folded in or dropped. This table comes from <code>notes/day3.md</code>.</p>
+        <table>
+          <thead><tr><th>First plan</th><th>Now</th></tr></thead>
+          <tbody>
+            {gone.map((row) => (
+              <tr>
+                <td>{row.first}</td>
+                <td class:list={{ dropped: row.now.startsWith("Dropped") }}>{row.now}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 </Base>
 
 <style>
-  .hero { padding: clamp(48px, 10vw, 120px) 0 clamp(32px, 6vw, 64px); }
-  .hero h1 { font-size: clamp(36px, 6vw, 56px); line-height: 1.05; letter-spacing: -0.035em; margin: 14px 0 20px; }
-  .hero p { font-size: 18px; color: var(--ink-2); line-height: 1.6; margin: 0 0 28px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 8px; }
-  .days { list-style: none; padding: 0; margin: 24px 0 0; }
-  .day { display: grid; grid-template-columns: 44px 1fr; gap: 20px; }
-  .day-rail { position: relative; display: flex; justify-content: center; }
-  .day-rail::after { content: ""; position: absolute; top: 44px; bottom: 0; width: 1px; background: var(--line-2); }
-  .day:last-child .day-rail::after { display: none; }
-  .day-number {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 11px;
-    border: 1px solid var(--line-2);
-    background: var(--surface);
-    font-weight: 650;
-    font-size: 15px;
-  }
-  .day-body { padding-bottom: 48px; min-width: 0; }
-  .day-body h2 { font-size: 22px; letter-spacing: -0.018em; margin: 5px 0 16px; }
+  .roadmap { max-width: calc(var(--page) + 2 * var(--gutter)); margin: 0 auto; padding: 40px var(--gutter) 0; }
+
+  .s { display: inline-block; flex: none; width: 10px; height: 10px; border: 1px solid transparent; }
+  .s-done { background: var(--ink); }
+  .s-switched { border-color: var(--ink-3); }
+  .s-built { border-color: var(--signal); }
+  .s-pending { background: var(--signal); }
+  .s-planned { background: var(--dot); }
+
+
+  .days { list-style: none; padding: 0; margin: 0; }
+  .day, .retired { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 9fr); gap: clamp(24px, 4vw, 64px); padding: 20px 0 64px; }
+  .day-head { display: flex; flex-direction: column; gap: 8px; }
+  .day-number { opacity: 0.18; font-family: var(--font-display); font-size: clamp(52px, 5.4vw, 72px); line-height: 0.95; letter-spacing: -0.02em; }
+  .day-body { min-width: 0; }
+  .day-body h2, .retired h2 { font-family: var(--font-display); font-weight: 400; font-size: clamp(26px, 2.8vw, 34px); line-height: 1.08; letter-spacing: -0.01em; margin: 6px 0 24px; }
   .experiments { list-style: none; margin: 0; padding: 0; }
   .experiments li {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 140px 1fr auto;
     gap: 16px;
-    align-items: center;
+    align-items: baseline;
     padding: 12px 0;
-    border-top: 1px solid var(--line);
   }
-  .exp-id { font-size: 12.5px; color: var(--ink-3); background: none; border: 0; padding: 0; white-space: nowrap; }
-  .exp-title { font-size: 16px; line-height: 1.45; }
-  .retired { margin-top: 64px; }
-  .retired h2 { font-size: 28px; letter-spacing: -0.022em; margin: 10px 0 12px; }
-  .retired table { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 20px; }
-  .retired th { text-align: left; font-size: 13px; color: var(--ink-3); font-weight: 600; padding: 10px 12px 10px 0; }
-  .retired td { padding: 12px 12px 12px 0; border-top: 1px solid var(--line); vertical-align: top; line-height: 1.5; }
+  .exp-id { font-size: 11.5px; line-height: 1.5; color: var(--ink-3); background: none; border: 0; padding: 0; }
+  .exp-title { font-size: 15.5px; line-height: 1.45; }
+  .exp-status { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+  .exp-status .s { width: 8px; height: 8px; }
+  .retired { margin-top: 48px; }
+  .retired table { width: 100%; border-collapse: collapse; font-size: 14.5px; margin-top: 24px; }
+  .retired th { text-align: left; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; padding: 10px 12px 10px 0; }
+  .retired td { padding: 12px 12px 12px 0; vertical-align: top; line-height: 1.5; }
   .retired td.dropped { color: var(--ink-3); }
-  @media (max-width: 720px) {
-    .day { grid-template-columns: 36px 1fr; gap: 14px; }
-    .day-number { width: 32px; height: 32px; }
-    .experiments li { grid-template-columns: 1fr auto; gap: 4px 12px; }
-    .exp-id { grid-column: 1 / -1; }
+  @media (max-width: 900px) {
+      .day, .retired { gap: 8px; }
+    .day-head { flex-direction: row; align-items: baseline; gap: 12px; }
+    .day-number { font-size: 48px; }
+  }
+  @media (max-width: 640px) {
+    .experiments li { grid-template-columns: 1fr; gap: 4px; }
   }
 </style>

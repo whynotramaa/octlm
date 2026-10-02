@@ -26,7 +26,7 @@ export const f2 = (value) => value.toFixed(2);
 export const ratio = (row) => row.tokens_per_second / row.reference_tokens_per_second;
 export const positions = (row) => row.cache_bytes / (perToken * (row.dtype.endsWith("float32") ? 2 : 1));
 
-Loading weights and matching logits proves one forward pass. A chat model runs thousands of them, one per generated token, each reusing the KV cache from the last. So the final Day 6 check runs [Day 5's cached generator](/posts/kv-cache-in-practice/) on Qwen and compares its greedy tokens against Transformers.
+Loading weights and matching logits proves one forward pass. A chat model runs thousands of them, one per generated token, each reusing the KV cache from the last. So the final Day 6 check runs [Day 5's cached generator](/blogs/kv-cache-in-practice/) on Qwen and compares its greedy tokens against Transformers.
 
 <Figure label="Measured on a T4" caption="The 32 tokens octlm generated for each prompt, identical to the reference on every repeat. Flip the stop switch to see what a harness should keep.">
   <GenerationTrace client:visible generations={qwen.generations} rows={gen(t4)} imEnd={qwen.im_end} />
@@ -81,7 +81,7 @@ The rule never fired. Every token matched on every repeat.
 
 The T4 rows generate {gen(t4)[0].new_tokens} tokens and the CPU rows {gen(cpu)[0].new_tokens}, with two threads to keep the laptop cool. Both include prefill. Every cache size matched the formula.
 
-On the T4, octlm is {Math.round(100 * (1 - ratio(gen(t4)[0])))} and {Math.round(100 * (1 - ratio(gen(t4)[1])))} percent slower than the reference. [The seed-spread post](/posts/seed-spread-at-scale/) already has a lead on why. PyTorch's documentation says SDPA supports grouped-query attention only in its flash and math kernels on CUDA, and the flash kernel needs a newer GPU than the T4. So octlm's `enable_gqa=True` probably runs the slow math kernel. That's a lead, not a measurement. Decode speed isn't a Day 6 goal, so it stays open. On the CPU octlm is slightly faster, by a margin too small to claim.
+On the T4, octlm is {Math.round(100 * (1 - ratio(gen(t4)[0])))} and {Math.round(100 * (1 - ratio(gen(t4)[1])))} percent slower than the reference. [The seed-spread post](/blogs/seed-spread-at-scale/) already has a lead on why. PyTorch's documentation says SDPA supports grouped-query attention only in its flash and math kernels on CUDA, and the flash kernel needs a newer GPU than the T4. So octlm's `enable_gqa=True` probably runs the slow math kernel. That's a lead, not a measurement. Decode speed isn't a Day 6 goal, so it stays open. On the CPU octlm is slightly faster, by a margin too small to claim.
 
 <Label>What the output shows</Label>
 

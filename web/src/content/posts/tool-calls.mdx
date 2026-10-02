@@ -37,7 +37,7 @@ A model only produces text. To make it act, you need a program around it that of
 
 ## Qwen already knows a format
 
-We don't invent one. Qwen's chat template, the same one [Day 6 matched byte for byte](/posts/qwen-tokenizer-and-template/), prints the tool schemas into the system turn and tells the model how to call them:
+We don't invent one. Qwen's chat template, the same one [Day 6 matched byte for byte](/blogs/qwen-tokenizer-and-template/), prints the tool schemas into the system turn and tells the model how to call them:
 
 ```text
 For each function call, return a json object with function name and arguments
@@ -86,7 +86,7 @@ In the baseline, stock Qwen3-0.6B ran {day7.tasks.length} tasks under {evalRows[
 
 No exception ever ended a run, which was the experiment's stop condition. The feedback reached the model, but it didn't help. In the two runs that hit the {maxTurns}-turn limit, the model read "not valid JSON" and sent the same broken call again, every turn.
 
-The bigger story is calls that never happened. Only {toolRuns} of {runs.length} runs made any call at all. The [eval post](/posts/the-day7-eval/) shows what that does to the score.
+The bigger story is calls that never happened. Only {toolRuns} of {runs.length} runs made any call at all. The [eval post](/blogs/the-day7-eval/) shows what that does to the score.
 
 Decision: keep the per-block parser.
 

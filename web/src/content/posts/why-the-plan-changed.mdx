@@ -32,7 +32,7 @@ Hoffmann et al. found that for a fixed compute budget, the best loss comes from 
 
 The Day 2 grid trained models of about 3.3 million parameters for 400 steps of 8 blocks of 256 tokens, so 819,200 tokens each. That's about 0.25 tokens per parameter, 1 percent of the compute-optimal budget. The Day 3 plan raised the steps fivefold, to 4.1 million tokens, which is still only about 1.1 tokens per parameter. Its long-context config reached 8.2 million tokens, and the whole Day 2 corpus holds 2.96 million, so it would have repeated data too.
 
-And that explains [the Day 2 grid](/posts/reading-the-grid/). A seed spread of 0.043 bits per byte, bigger than most of the effects we were measuring, is just what an undertrained model looks like. Where it ends up depends a lot on where it started. Stage 0 would have measured that spread again, at a budget that's still about 18 times too small.
+And that explains [the Day 2 grid](/blogs/reading-the-grid/). A seed spread of 0.043 bits per byte, bigger than most of the effects we were measuring, is just what an undertrained model looks like. Where it ends up depends a lot on where it started. Stage 0 would have measured that spread again, at a budget that's still about 18 times too small.
 
 <Figure label="Playground" caption="Training compute is about 6 × parameters × tokens, 2 for the forward pass and 4 for the backward pass, per parameter per token. Time assumes one T4 at a sustained throughput. Presets are the runs this project did or considered.">
   <ComputeEstimator client:visible presets={presets} measured={4.1} assumed={15} />
@@ -58,7 +58,7 @@ My goal with this is to learn ML properly, like in depth, for placement season, 
 
 So the new plan has two halves:
 
-1. **Train the from-scratch model once, properly.** The resulting model has 26.3 million parameters, on TinyStories, with the Day 2 `modern` stack. TinyStories is a dataset where models under about 30 million parameters write coherent English, and the run fits the measured compute. Day 4 trained it, and [Day 5 compares and speeds it up](/posts/seed-spread-at-scale/).
+1. **Train the from-scratch model once, properly.** The resulting model has 26.3 million parameters, on TinyStories, with the Day 2 `modern` stack. TinyStories is a dataset where models under about 30 million parameters write coherent English, and the run fits the measured compute. Day 4 trained it, and [Day 5 compares and speeds it up](/blogs/seed-spread-at-scale/).
 2. **Load Qwen into the same model code.** `octlm/model.py` already has RoPE, RMSNorm, SwiGLU and grouped-query attention, the same parts Qwen uses. Match its logits, write LoRA, fine-tune it for tool calls, and build the harness and its eval around it. That's Day 6 to Day 9.
 
 Two alternatives got rejected. Continuing the first plan spends the remaining time on variants the harness never uses, and ends with a model too weak to drive it. Fine-tuning Qwen with an off-the-shelf trainer gives the harness a working model, but then there's nothing to explain when an interviewer asks how attention, the KV cache or LoRA actually work. And that's kind of the whole point.

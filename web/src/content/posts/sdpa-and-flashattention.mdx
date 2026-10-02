@@ -23,7 +23,7 @@ export const mib = (bytes) => Math.round(bytes / 2 ** 20).toLocaleString("en-US"
 export const worstTiled = Math.max(...tiled.map((r) => r.max_abs_error));
 export const worstEquivalence = Math.max(...equivalence.map((r) => r.max_abs_error));
 
-[Causal attention, by hand](/posts/causal-attention/) computed the full score matrix, masked it, took a softmax and multiplied by the values. That's correct and easy to read. But it also allocates a $T \times T$ matrix per head, and at long lengths that matrix eats both memory and time. So Day 2 replaced it with PyTorch's fused attention function and kept the handwritten path as the reference.
+[Causal attention, by hand](/blogs/causal-attention/) computed the full score matrix, masked it, took a softmax and multiplied by the values. That's correct and easy to read. But it also allocates a $T \times T$ matrix per head, and at long lengths that matrix eats both memory and time. So Day 2 replaced it with PyTorch's fused attention function and kept the handwritten path as the reference.
 
 <Label>The problem</Label>
 

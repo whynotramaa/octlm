@@ -67,7 +67,7 @@ Every story then gets encoded with `<|bos|>` and `<|eos|>` and appended to one f
 
 The plan asked to choose between 4,096 and 8,192 entries by bits per byte. But bits per byte is a property of a trained model, so that choice would cost two full training runs. The TinyStories authors used a 10K vocabulary. So the note took 8,192, recorded the compression it gets, and moved the 4,096 comparison to Day 5 if GPU time allows.
 
-[BPE training](/posts/byte-level-bpe/) recounts every pair after every merge, so its cost grows with the sample. The tokenizer trained on the first 10 million characters of the training split. TinyStories uses a small vocabulary, so a small sample covers it.
+[BPE training](/blogs/byte-level-bpe/) recounts every pair after every merge, so its cost grows with the sample. The tokenizer trained on the first 10 million characters of the training split. TinyStories uses a small vocabulary, so a small sample covers it.
 
 <Label>The encoder</Label>
 

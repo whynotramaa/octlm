@@ -11,6 +11,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -139,7 +140,7 @@ def test_status(root: Path) -> tuple[int, str]:
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHON_COLORS": "0"},
     )
     try:
         output, _ = process.communicate(timeout=TEST_TIMEOUT)
@@ -263,7 +264,12 @@ def common_prefix(first: list[int], second: list[int]) -> int:
 
 @torch.inference_mode()
 def generate_turn(
-    model: Decoder, prompt: list[int], state: dict, settings: dict, generator: torch.Generator
+    model: Decoder,
+    prompt: list[int],
+    state: dict,
+    settings: dict,
+    generator: torch.Generator,
+    watch: Callable[[str, object], None] | None = None,
 ) -> tuple[list[int], int]:
     keep = min(common_prefix(state["ids"], prompt), len(prompt) - 1)
     cache = [(k[:, :, :keep], v[:, :, :keep]) for k, v in state["cache"]] if keep else None
@@ -279,6 +285,8 @@ def generate_turn(
             settings["top_p"],
         )
         new.append(token.item())
+        if watch:
+            watch("token", new[-1])
         if new[-1] in settings["stop_ids"] or step + 1 == MAX_NEW_TOKENS:
             break
         logits, cache = model.forward_cached(token, cache)
@@ -300,7 +308,14 @@ def respond(root: Path, call: dict | str, record: dict, reserved: list[str]) -> 
 
 
 def run_task(
-    model: Decoder, tokenizer: QwenTokenizer, settings: dict, task: dict, root: Path, seed: int
+    model: Decoder,
+    tokenizer: QwenTokenizer,
+    settings: dict,
+    task: dict,
+    root: Path,
+    seed: int,
+    turns: list | None = None,
+    watch: Callable[[str, object], None] | None = None,
 ) -> dict:
     generator = torch.Generator().manual_seed(seed)
     device = model.token_embedding.weight.device
@@ -328,9 +343,11 @@ def run_task(
             record["stop"] = "context"
             break
         (new, keep), seconds = timed(
-            lambda: generate_turn(model, prompt, state, settings, generator), device
+            lambda: generate_turn(model, prompt, state, settings, generator, watch), device
         )
         ended = new[-1] in settings["stop_ids"]
+        if turns is not None:
+            turns.append((prompt, new))
         record["turns"] += 1
         record["truncated_turns"] += not ended
         record["generated_tokens"] += len(new)
@@ -343,9 +360,11 @@ def run_task(
         if not calls:
             record["stop"], record["answer"] = "answer", reply
             break
-        messages.extend(
-            {"role": "tool", "content": respond(root, c, record, reserved)} for c in calls
-        )
+        for call in calls:
+            result = respond(root, call, record, reserved)
+            messages.append({"role": "tool", "content": result})
+            if watch:
+                watch("tool", result)
     return {**record, "messages": messages}
 
 
@@ -412,7 +431,7 @@ def run_eval(model: Decoder, manifest: dict, args: argparse.Namespace, extra: di
             "tasks_hash": file_hash(args.tasks),
             "source_hashes": {
                 name: file_hash(Path(__file__).with_name(name))
-                for name in ("harness.py", "day6.py", "model.py", "day8.py")
+                for name in ("harness.py", "day6.py", "model.py", "day8.py", "day9.py")
                 if Path(__file__).with_name(name).exists()
             },
             **extra,

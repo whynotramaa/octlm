@@ -7,6 +7,7 @@ import rehypeKatex from "rehype-katex";
 
 export default defineConfig({
   integrations: [mdx(), preact()],
+  redirects: { "/posts/[slug]": "/blogs/[slug]" },
   markdown: {
     processor: unified({ remarkPlugins: [remarkMath], rehypePlugins: [rehypeKatex], smartypants: false }),
     shikiConfig: { themes: { light: "github-light", dark: "github-dark" } },

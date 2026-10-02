@@ -76,7 +76,7 @@ Both use RMSNorm before each sublayer, SwiGLU feed-forward layers, grouped-query
 
 ## Which channels rotate together
 
-[The RoPE post](/posts/rope/) rotates channel pairs by an angle that grows with position. Octlm paired neighbors, channel 0 with 1, 2 with 3 and so on. Hugging Face's Qwen code pairs the first half with the second half, channel 0 with {q.head_size / 2}, 1 with {q.head_size / 2 + 1}. Both are valid RoPE. But Qwen's query and key weights were trained with split halves. Load those weights and rotate with the other layout, and every angle is correct while the wrong channels get rotated together. The model would produce fluent-looking garbage.
+[The RoPE post](/blogs/rope/) rotates channel pairs by an angle that grows with position. Octlm paired neighbors, channel 0 with 1, 2 with 3 and so on. Hugging Face's Qwen code pairs the first half with the second half, channel 0 with {q.head_size / 2}, 1 with {q.head_size / 2 + 1}. Both are valid RoPE. But Qwen's query and key weights were trained with split halves. Load those weights and rotate with the other layout, and every angle is correct while the wrong channels get rotated together. The model would produce fluent-looking garbage.
 
 <Figure label="Playground" caption="One 8-channel head. Switch the layout and watch the score drift away from what the trained weights expect. Switch the base to see how slowly the last pair turns.">
   <RopeLayouts client:visible />

@@ -44,10 +44,10 @@ Read that way, the grid says:
 
 | Variant | Change | Code gap vs baseline | Verdict |
 | --- | --- | ---: | --- |
-| rmsnorm | [RMSNorm](/posts/rmsnorm/) | {(row("rmsnorm").code - row("baseline").code).toFixed(4)} | Inside the noise |
-| swiglu | [SwiGLU](/posts/swiglu/) | {(row("swiglu").code - row("baseline").code).toFixed(4)} | Outside the noise, keep |
-| post-norm | [Post-norm](/posts/residual-placement/) | {(row("post-norm").code - row("baseline").code).toFixed(4)} | Far outside, revert |
-| gqa-4 | [4 KV heads](/posts/gqa-and-kv-cache/) | {(row("gqa-4").code - row("baseline").code).toFixed(4)} | Inside the noise |
+| rmsnorm | [RMSNorm](/blogs/rmsnorm/) | {(row("rmsnorm").code - row("baseline").code).toFixed(4)} | Inside the noise |
+| swiglu | [SwiGLU](/blogs/swiglu/) | {(row("swiglu").code - row("baseline").code).toFixed(4)} | Outside the noise, keep |
+| post-norm | [Post-norm](/blogs/residual-placement/) | {(row("post-norm").code - row("baseline").code).toFixed(4)} | Far outside, revert |
+| gqa-4 | [4 KV heads](/blogs/gqa-and-kv-cache/) | {(row("gqa-4").code - row("baseline").code).toFixed(4)} | Inside the noise |
 | gqa-2 | 2 KV heads | {(row("gqa-2").code - row("baseline").code).toFixed(4)} | Inside the noise, keep for the cache |
 | mqa-1 | 1 KV head | {(row("mqa-1").code - row("baseline").code).toFixed(4)} | Inside the noise |
 | modern | RoPE, RMSNorm, SwiGLU, 2 KV heads | {(row("modern").code - row("baseline").code).toFixed(4)} | Best mean, widest spread |
@@ -70,7 +70,7 @@ The note's diagnosis is that the fix is more steps, not more seeds. More seeds w
 
 ## The grid is why the plan changed
 
-Day 3 planned to fix this by raising the budget fivefold and remeasuring the noise first, as "Stage 0". But when I worked out the numbers, even that budget would be about 18 times too small, and the corpus would repeat. [Why the plan changed](/posts/why-the-plan-changed/) covers the arithmetic. [Day 5 measured the seed spread again](/posts/seed-spread-at-scale/) at 98.3M tokens per run. The larger range fell to 0.0050 bits per byte, and the modern stack beat the baseline by 0.0338, well clear of it.
+Day 3 planned to fix this by raising the budget fivefold and remeasuring the noise first, as "Stage 0". But when I worked out the numbers, even that budget would be about 18 times too small, and the corpus would repeat. [Why the plan changed](/blogs/why-the-plan-changed/) covers the arithmetic. [Day 5 measured the seed spread again](/blogs/seed-spread-at-scale/) at 98.3M tokens per run. The larger range fell to 0.0050 bits per byte, and the modern stack beat the baseline by 0.0338, well clear of it.
 
 The rule that survives is that every comparison states its noise floor first, and a gap inside it gets recorded as unresolved with its numbers, not as a win.
 

@@ -104,7 +104,7 @@ Decision: keep. The adapters fit with room to spare, and step 0 is provably the 
 ## Not built
 
 - **QLoRA's 4-bit base.** Storing $W_0$ in 4-bit NormalFloat would save more memory. At 0.6B parameters the float16 base already fits, so the extra code buys nothing here.
-- **The PEFT library.** Hugging Face PEFT does all of this. octlm writes `LoRALinear` itself, under 30 lines, so every line is visible and the merge in [the last Day 8 post](/posts/merge-and-int8/) can be checked by hand. octlm copies PEFT's initialization and its float32 merge.
+- **The PEFT library.** Hugging Face PEFT does all of this. octlm writes `LoRALinear` itself, under 30 lines, so every line is visible and the merge in [the last Day 8 post](/blogs/merge-and-int8/) can be checked by hand. octlm copies PEFT's initialization and its float32 merge.
 - **LoRA dropout and DoRA.** Both are common options. Neither was needed to pass the exit check, and each would be another setting to tune.
 
 <Callout hue="gray" title="Sources">

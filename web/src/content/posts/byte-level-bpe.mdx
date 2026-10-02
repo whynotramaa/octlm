@@ -150,7 +150,7 @@ Decision, keep the 1,024-entry tokenizer for the Day 1 model. The note is clear 
 
 ## A full recount per merge
 
-Recounting every pair after every merge costs time proportional to the number of distinct chunks times the number of merges. On Day 1's 111 KB that took seconds. Day 2 measured it before training on 7 MB, 2.7 seconds for 142 KB at 512 entries, and 57 seconds for 702 KB at 2,048 entries. The cost tracked the 11,665 distinct chunks in that sample, not the raw bytes. So Day 2 trained on every tenth document. Day 4 trained on the first 10 million characters of TinyStories, which took 303 seconds, and then added a [chunk cache](/posts/tinystories-and-the-encoder/) to make encoding fast.
+Recounting every pair after every merge costs time proportional to the number of distinct chunks times the number of merges. On Day 1's 111 KB that took seconds. Day 2 measured it before training on 7 MB, 2.7 seconds for 142 KB at 512 entries, and 57 seconds for 702 KB at 2,048 entries. The cost tracked the 11,665 distinct chunks in that sample, not the raw bytes. So Day 2 trained on every tenth document. Day 4 trained on the first 10 million characters of TinyStories, which took 303 seconds, and then added a [chunk cache](/blogs/tinystories-and-the-encoder/) to make encoding fast.
 
 <Label>Skipped</Label>
 
@@ -158,7 +158,7 @@ Recounting every pair after every merge costs time proportional to the number of
 
 - **Incremental pair counting.** Production trainers only update the counts a merge touched. The measured cost never blocked a run, so the simple loop stayed.
 - **GPT-2's regex pre-tokenizer.** It also splits contractions like `'s` and keeps a leading space on words. The four-type rule is shorter to state and test, and it keeps code whitespace intact.
-- **A pretrained tokenizer.** `AGENTS.md` requires merges learned from our own training data. The one exception is Qwen on Day 6, whose [tokenizer ships with its weights](/posts/qwen-tokenizer-and-template/).
+- **A pretrained tokenizer.** `AGENTS.md` requires merges learned from our own training data. The one exception is Qwen on Day 6, whose [tokenizer ships with its weights](/blogs/qwen-tokenizer-and-template/).
 
 <Callout hue="gray" title="Sources">
   <p>Sennrich et al., <a href="https://aclanthology.org/P16-1162/">Neural Machine Translation of Rare Words with Subword Units</a>, for pair merges building a fixed subword vocabulary. The <a href="https://cdn.openai.com/better-language-models/language-models.pdf">GPT-2 report</a> and its <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">encoder source</a> for byte-level BPE and category boundaries. EXP-004 numbers and the 20-merge table from <code>notes/day1.md</code>. Training-cost numbers from <code>notes/day2.md</code> and <code>notes/day4.md</code>.</p>
