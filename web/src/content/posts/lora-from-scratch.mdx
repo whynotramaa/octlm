@@ -1,0 +1,112 @@
+---
+title: LoRA from scratch
+description: "Fine-tuning all 600M Qwen weights needs about 9.7 GB of optimizer state before a single activation. LoRA freezes them and trains two thin matrices per projection instead. octlm's version trains 1.7 percent of the parameters and matches the base model's logits exactly at step 0."
+day: 8
+order: 1
+exps: ["EXP-080"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import Flow from "../../widgets/Flow.tsx";
+import LoraCounter from "../../widgets/LoraCounter.tsx";
+import qwen from "../../data/qwen.json";
+import train0 from "../../data/runs/day8-train-0.json";
+import train1 from "../../data/runs/day8-train-1.json";
+import rerun from "../../data/runs/day8-train-0-rerun.json";
+
+export const zero = train0[0];
+export const done0 = train0.at(-1);
+export const done1 = train1.at(-1);
+export const [rank, alpha] = done0.settings;
+export const int = (value) => Math.round(value).toLocaleString("en-US");
+export const gb = (bytes) => (bytes / 1e9).toFixed(1);
+export const zeros = [train0[0], train1[0], rerun[0]].map((row) => row.max_absolute_difference);
+
+Day 7 ended with a clear diagnosis. Stock Qwen3-0.6B answers without reading the repository, and when it does write a file, the JSON breaks. Day 8 fine-tunes the model on examples of doing it right. Before any of that, we need a way to train a 600M-parameter model on a free T4 with 15 GB of memory.
+
+<Label>The memory problem</Label>
+
+## Full fine-tuning doesn't fit
+
+Plain fine-tuning updates every weight. With mixed precision and AdamW, each parameter costs 16 bytes of state: a float32 master copy, a float32 gradient, and two float32 Adam moments. Qwen3-0.6B has {int(zero.total_parameters)} parameters in octlm's decoder, so that's {gb(zero.total_parameters * 16)} GB before activations. Activations for a 1,000-token example come on top. A T4 has 15 GB, and full fine-tuning would leave almost none of it for activations.
+
+<Label>The idea</Label>
+
+## Train a small correction, not the weights
+
+[LoRA](https://arxiv.org/abs/2106.09685) freezes the original weight matrix $W_0$ and learns a low-rank update next to it. For a projection with $d_\text{in}$ inputs and $d_\text{out}$ outputs:
+
+$$
+h = W_0 x + \frac{\alpha}{r} B A x,
+\qquad A \in \mathbb{R}^{r \times d_\text{in}},\;
+B \in \mathbb{R}^{d_\text{out} \times r}
+$$
+
+The rank $r$ is small, {rank} here, against $d_\text{in} = {qwen.config.d_model}$. So $A$ and $B$ together hold $r(d_\text{in} + d_\text{out})$ numbers, while $W_0$ holds $d_\text{in} d_\text{out}$. The bet is that the change fine-tuning needs lives in a few directions, so a rank-{rank} update can carry it.
+
+Two details make it work:
+
+- **B starts at zero.** $A$ gets the usual random `nn.Linear` initialization, and $B$ is all zeros, so $BA = 0$. At step 0 the adapted model is exactly the base model. Training starts from Qwen's behavior, not from noise.
+- **The scale is α/r.** With $\alpha = {alpha}$ and $r = {rank}$, the update is multiplied by {alpha / rank}. Fixing α while changing r keeps the update's size roughly constant, so the learning rate needs less retuning.
+
+<Figure label="One adapted projection" caption="Click through the forward pass of one LoRALinear. The base path and the adapter path see the same input and add at the end.">
+  <Flow client:visible stages={[
+    { name: "x", shape: `tokens × ${qwen.config.d_model}`, detail: "The input to one projection, here the query projection of one block, in float16." },
+    { name: "W₀ x", shape: `tokens × ${qwen.config.n_heads * qwen.config.head_size}`, detail: "The frozen base weight runs as before. No gradient is stored for it." },
+    { name: "A x", shape: `tokens × ${rank}`, detail: `A squeezes ${qwen.config.d_model} features down to ${rank}. A and B are float32 parameters, and autocast runs their matmuls in float16.` },
+    { name: "B (A x)", shape: `tokens × ${qwen.config.n_heads * qwen.config.head_size}`, detail: `B maps the ${rank} numbers back out to the projection's full width. At step 0 this is all zeros.` },
+    { name: "× α/r, add", shape: `tokens × ${qwen.config.n_heads * qwen.config.head_size}`, detail: `The update is scaled by ${alpha}/${rank} = ${alpha / rank}, cast back to the input dtype, and added to the base output. A zero B adds an exact zero.` },
+  ]} />
+</Figure>
+
+<Source file="octlm/day8.py" symbol="LoRALinear" />
+
+<Label>Where to put adapters</Label>
+
+## All seven projections, not just attention
+
+The LoRA paper adapted only the query and value projections. Later work disagreed. [QLoRA](https://arxiv.org/abs/2305.14314) found that query and value adapters alone could not match full fine-tuning, and that "LoRA on all linear transformer block layers are required". Thinking Machines' [LoRA Without Regret](https://thinkingmachines.ai/blog/lora/) found attention-only LoRA "significantly underperforms" MLP-only LoRA. octlm adapts all seven projections in every block: query, key, value and output in attention, and gate, up and down in the SwiGLU feed-forward.
+
+<Figure label="Count it" caption="Pick a rank and the projections to adapt. The counts use Qwen3-0.6B's real shapes, and the TypeScript count matches the trainable-parameter count logged on the T4.">
+  <LoraCounter client:visible config={qwen.config} total={zero.total_parameters} />
+</Figure>
+
+The feed-forward projections dominate the count. Each is {int(qwen.config.d_model)} by {int(qwen.config.ff_hidden)}, so they hold most of the weights the adapters can reach. Dropping them cuts the adapter by more than half and skips the layers QLoRA and Thinking Machines found matter most.
+
+<Label>Result</Label>
+
+## Exactly zero at step 0
+
+The plan set one stop condition before the run. Because $B$ starts at zero, any nonzero logit difference at step 0 means the code is wrong. The training stage runs the base model and the freshly adapted model on the longest training example, {int(zero.tokens)} tokens, and compares their logits.
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Measure</th><th class="num">Seed 0</th><th class="num">Seed 1</th></tr></thead>
+    <tbody>
+      <tr><td>Step-0 max logit difference</td><td class="num">{train0[0].max_absolute_difference}</td><td class="num">{train1[0].max_absolute_difference}</td></tr>
+      <tr><td>Trainable parameters</td><td class="num">{int(train0[0].trainable_parameters)}</td><td class="num">{int(train1[0].trainable_parameters)}</td></tr>
+      <tr><td>Share of all parameters</td><td class="num">{(100 * zero.trainable_parameters / zero.total_parameters).toFixed(2)}%</td><td class="num">{(100 * train1[0].trainable_parameters / train1[0].total_parameters).toFixed(2)}%</td></tr>
+      <tr><td>Peak CUDA memory in training</td><td class="num">{gb(done0.peak_memory_bytes)} GB</td><td class="num">{gb(done1.peak_memory_bytes)} GB</td></tr>
+      <tr><td>Training time, {done0.steps} steps</td><td class="num">{Math.round(done0.seconds)} s</td><td class="num">{Math.round(done1.seconds)} s</td></tr>
+    </tbody>
+  </table>
+</div>
+
+The difference is exactly 0.0 in all {zeros.length} training runs, including the later rerun of seed 0. It's not merely small. The adapter output is cast to float16 before the add, and $0 \times$ anything is an exact zero, so the sum is bit-identical. Peak memory stayed near half the T4.
+
+Decision: keep. The adapters fit with room to spare, and step 0 is provably the base model.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **QLoRA's 4-bit base.** Storing $W_0$ in 4-bit NormalFloat would save more memory. At 0.6B parameters the float16 base already fits, so the extra code buys nothing here.
+- **The PEFT library.** Hugging Face PEFT does all of this. octlm writes `LoRALinear` itself, under 30 lines, so every line is visible and the merge in [the last Day 8 post](/posts/merge-and-int8/) can be checked by hand. octlm copies PEFT's initialization and its float32 merge.
+- **LoRA dropout and DoRA.** Both are common options. Neither was needed to pass the exit check, and each would be another setting to tune.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://arxiv.org/abs/2106.09685">Hu et al. 2021</a> define LoRA, the zero B, the α/r scale and the merge. <a href="https://arxiv.org/abs/2305.14314">QLoRA</a> and <a href="https://thinkingmachines.ai/blog/lora/">LoRA Without Regret</a> justify adapting every projection. The <a href="https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/layer.py">PEFT LoRA layer</a> supplies the initialization. Runs are in <code>runs/kaggle-day8/</code> and decisions in <code>notes/day8.md</code>.</p>
+</Callout>

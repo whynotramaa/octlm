@@ -9,6 +9,7 @@ import { type Matrix, maxAbsDifference } from "../src/lib/matrix.ts";
 import { toBfloat16, toFloat16 } from "../src/lib/floats.ts";
 import { quantizeRow, seedSpread } from "../src/lib/day5.ts";
 import { answerMatches, parseCalls, passHat, schemasOf } from "../src/lib/harness.ts";
+import { loraForward, loraParameters, mergeLora, qwenProjections } from "../src/lib/lora.ts";
 import { hiddenSize, kvCacheBytes, parameterCount } from "../src/lib/model.ts";
 import { tiledAttention } from "../src/lib/online-softmax.ts";
 import { applyRope, applyRopeSplit, ropeAngles, ropeTables, sinusoidal } from "../src/lib/positions.ts";
@@ -168,4 +169,26 @@ test("published Day 7 baseline matches its own runs", () => {
   assert.ok(Math.abs(passHat(successes, 3, 1) - summary.pass_1_mean) < 1e-12);
   assert.equal(passHat(successes, 3, 3), summary.pass_hat_3);
   assert.ok(roadmap().find((day) => day.day === 7)?.experiments.every((exp) => exp.status === "done"));
+});
+
+test("LoRA parameter count, merge and forward match octlm.day8", () => {
+  const f = fixture("day8");
+  assert.equal(loraParameters(f.shapes, f.rank, f.layers), f.trainable);
+  close(mergeLora(f.base, f.a, f.b, f.scale), f.merged);
+  close(loraForward(f.x, f.base, f.a, f.b, f.scale), f.output);
+  const qwen = JSON.parse(readFileSync(new URL("../src/data/qwen.json", import.meta.url), "utf-8")).config;
+  const train = JSON.parse(readFileSync(new URL("../src/data/runs/day8-train-0.json", import.meta.url), "utf-8"));
+  const shapes = qwenProjections(qwen).map((p) => p.shape);
+  assert.equal(loraParameters(shapes, 16, qwen.n_layers), train[0].trainable_parameters);
+});
+
+test("published Day 8 runs match their summaries", () => {
+  for (const name of ["day8-eval-0", "day8-eval-1", "day8-eval-0-int8"]) {
+    const rows = JSON.parse(readFileSync(new URL(`../src/data/runs/${name}.json`, import.meta.url), "utf-8"));
+    const runs = rows.filter((row: any) => row.type === "day7_run");
+    const tasks = [...new Set(runs.map((row: any) => row.task))];
+    const successes = tasks.map((task) => runs.filter((row: any) => row.task === task && row.success).length);
+    assert.ok(Math.abs(passHat(successes, 3, 1) - rows.at(-1).pass_1_mean) < 1e-12, name);
+  }
+  assert.ok(roadmap().find((day) => day.day === 8)?.experiments.every((exp) => exp.status === "done"));
 });

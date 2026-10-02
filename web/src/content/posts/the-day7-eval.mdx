@@ -89,7 +89,7 @@ pass@k, the HumanEval metric, rewards a model that gets something right once. pa
 ## {noCall} of {v2.length} runs never called a tool
 
 <Figure label="Every run" caption="One cell per run: columns are tasks grouped by kind, rows are seeds. Click a cell to read its prompt and final answer. Switch to v1 to see the three passes the first checks got wrong.">
-  <EvalGrid client:visible tasks={day7.tasks} v1={v1} v2={v2} />
+  <EvalGrid client:visible tasks={day7.tasks} sets={[{ value: "v1", text: "v1 (run 1)", runs: v1 }, { value: "v2", text: "v2 (baseline)", runs: v2 }]} start="v2" label="Checks" flippedText="scored differently by v1 and v2" />
 </Figure>
 
 Asked which port the server uses, the model doesn't read `config/settings.ini`. It replies "{v2.find((r) => r.task === "port").answer}" The config says 8042. It does this on nearly every `answer` and `tests` task. It only uses tools when the prompt names a file to write, and even then most of its code arrives as broken JSON.

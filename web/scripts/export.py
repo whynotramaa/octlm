@@ -9,6 +9,7 @@ from octlm.config import ProjectConfig
 from octlm.day2 import VARIANTS, tiled_attention
 from octlm.day5 import Int8Linear, spread
 from octlm.day6 import CHATS, QwenTokenizer, qwen_config, read_header, read_json, weight_names
+from octlm.day8 import TARGETS, add_lora, examples
 from octlm.harness import (
     SYSTEM,
     TOOLS,
@@ -91,6 +92,11 @@ def export_runs() -> None:
     export_jsonl(ROOT / "runs/day6-cpu-parity/results.jsonl", "day6-cpu-parity")
     export_jsonl(ROOT / "runs/kaggle-day7/day7/eval.jsonl", "day7-eval-v1")
     export_jsonl(ROOT / "runs/kaggle-day7-v2/day7/eval.jsonl", "day7-eval")
+    for name in ("train-0", "train-1", "eval-0", "eval-1"):
+        export_jsonl(ROOT / f"runs/kaggle-day8/{name}.jsonl", f"day8-{name}")
+    export_jsonl(ROOT / "runs/kaggle-day8/eval-0-int8.jsonl", "day8-int8-gate")
+    export_jsonl(ROOT / "runs/kaggle-day8-int8/eval-0-int8.jsonl", "day8-eval-0-int8")
+    export_jsonl(ROOT / "runs/kaggle-day8-int8/train-0.jsonl", "day8-train-0-rerun")
 
 
 def tokenizer_fixture() -> dict:
@@ -406,7 +412,9 @@ def turn_tokens(tokenizer: QwenTokenizer, messages: list[dict]) -> list[dict]:
         prompt = tokenizer.encode(text, allow_special=True)
         keep = min(common_prefix(cached, prompt), len(prompt) - 1)
         reused = tokenizer.decode(prompt[:keep])
-        turns.append({"text": text, "reused_chars": len(reused), "rendered": len(prompt), "keep": keep})
+        turns.append(
+            {"text": text, "reused_chars": len(reused), "rendered": len(prompt), "keep": keep}
+        )
         cached = prompt + tokenizer.encode(message["content"], allow_special=True)
     return turns
 
@@ -437,6 +445,63 @@ def day7_data() -> dict:
     }
 
 
+def day8_fixture() -> dict:
+    config = DecoderConfig(
+        vocab_size=32,
+        context_length=8,
+        d_model=8,
+        n_heads=2,
+        n_layers=2,
+        kv_heads=1,
+        position="rope",
+        norm="rmsnorm",
+        feed_forward="swiglu",
+    )
+    model = Decoder(config).eval()
+    trainable = sum(p.numel() for p in add_lora(model, 4, 8, seed=0))
+    layer = model.blocks[0].attention.query
+    generator = torch.Generator().manual_seed(1)
+    layer.lora_b.data = torch.randn(layer.lora_b.shape, generator=generator)
+    x = torch.randn(3, layer.base.in_features, generator=generator)
+    return {
+        "shapes": [
+            [getattr(block, name).base.in_features, getattr(block, name).base.out_features]
+            for part, names in TARGETS.items()
+            for name in names
+            for block in [getattr(model.blocks[0], part)]
+        ],
+        "layers": config.n_layers,
+        "rank": 4,
+        "trainable": trainable,
+        "base": layer.base.weight.tolist(),
+        "a": layer.lora_a.tolist(),
+        "b": layer.lora_b.tolist(),
+        "scale": layer.scale,
+        "x": x.tolist(),
+        "output": layer(x).tolist(),
+        "merged": layer.merged().weight.tolist(),
+    }
+
+
+def day8_data() -> dict:
+    tokenizer = QwenTokenizer(ROOT / "artifacts/day6/qwen")
+    rows = [json.loads(line) for line in (ROOT / "runs/day8-traces.jsonl").open()]
+    summary = rows[-1]
+    tasks = {task["id"]: task for task in load_tasks(ROOT / "fixtures/day8/tasks.json")}
+    traces = []
+    for row in rows[:-1]:
+        found = examples(row["messages"], tokenizer)
+        turns = [[start, len(ids) - start] for ids, start in found]
+        traces.append(
+            {"task": row["task"], "kind": tasks[row["task"]]["check"]["kind"], "turns": turns}
+        )
+    counts = [turn for item in traces for turn in item["turns"]]
+    totals = (len(counts), sum(p + t for p, t in counts), sum(t for _, t in counts))
+    if totals != (summary["examples"], summary["total_tokens"], summary["target_tokens"]):
+        raise RuntimeError("Day 8 trace token counts differ from the recorded trace summary")
+    return {"traces": traces}
+
+
 def main() -> None:
     export_runs()
     fixtures = WEB / "fixtures"
@@ -453,8 +518,10 @@ def main() -> None:
     write(fixtures / "day5.json", day5_fixture())
     write(fixtures / "day6.json", day6_fixture())
     write(fixtures / "day7.json", day7_fixture())
+    write(fixtures / "day8.json", day8_fixture())
     write(WEB / "src/data/qwen.json", qwen_data())
     write(WEB / "src/data/day7.json", day7_data())
+    write(WEB / "src/data/day8.json", day8_data())
 
 
 if __name__ == "__main__":

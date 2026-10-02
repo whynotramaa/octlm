@@ -1,0 +1,166 @@
+---
+title: Merging the adapter and storing it in int8
+description: "Merging folds LoRA into the base weights so inference runs one matmul per projection. The first merge check failed, because its tolerance was smaller than one float16 rounding step. With a correct gate, the merged int8 model halves the stored projections, keeps pass^1, and runs faster than the unmerged adapter."
+day: 8
+order: 4
+exps: ["EXP-083"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import EvalGrid from "../../widgets/EvalGrid.tsx";
+import Float16Gap from "../../widgets/Float16Gap.tsx";
+import LoraMerge from "../../widgets/LoraMerge.tsx";
+import LossLines from "../../widgets/LossLines.tsx";
+import { noteTable, num } from "../../lib/notes.ts";
+import day7 from "../../data/day7.json";
+import baseRows from "../../data/runs/day7-eval.json";
+import eval0 from "../../data/runs/day8-eval-0.json";
+import int8Rows from "../../data/runs/day8-eval-0-int8.json";
+import gateRows from "../../data/runs/day8-int8-gate.json";
+import train0 from "../../data/runs/day8-train-0.json";
+import rerun from "../../data/runs/day8-train-0-rerun.json";
+
+export const runsOf = (rows) => rows.filter((row) => row.type === "day7_run");
+export const first = gateRows[0];
+export const gate = int8Rows[0];
+export const env = int8Rows[1];
+export const fp = eval0.at(-1);
+export const q = int8Rows.at(-1);
+export const base = baseRows.at(-1);
+export const laptop = noteTable(8, "EXP-083 failure");
+export const f3 = (value) => value.toFixed(3);
+export const mb = (bytes) => (bytes / 1e6).toFixed(1);
+export const a = runsOf(eval0);
+export const b = runsOf(int8Rows);
+export const pair = (row) => b.find((r) => r.task === row.task && r.seed === row.seed);
+export const both = a.filter((r) => r.success && pair(r).success).length;
+export const onlyFp = a.filter((r) => r.success && !pair(r).success).length;
+export const onlyQ = a.filter((r) => !r.success && pair(r).success).length;
+export const stopsBy = (rows, kind) => rows.filter((r) => r.kind === kind && r.stop === "turns").length;
+export const hash = (row) => row.adapter_hash.slice(0, 8);
+export const step = (rows, n) => rows.find((r) => r.type === "sft_step" && r.step === n).loss;
+
+The [fine-tuned adapters](/posts/sft-with-lora/) work, but they cost something at inference. Every adapted projection runs three matmuls instead of one: the base weight, then A, then B. This post folds the adapter into the base weights, checks the fold, and stores the result with [Day 5's int8 path](/posts/int8-weight-only/).
+
+<Label>The merge</Label>
+
+## One matmul instead of three
+
+The adapter's contribution is linear in $x$, so it folds into the weight once:
+
+$$
+W_0 x + \frac{\alpha}{r} B A x = \Big(W_0 + \frac{\alpha}{r} B A\Big) x = W x
+$$
+
+After the merge, the model has the base model's shapes and speed. octlm computes $\frac{\alpha}{r} B A$ in float32, adds it to $W_0$ in float32, and casts the sum back to float16, as [PEFT](https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/layer.py) does.
+
+<Figure label="Merge a toy layer" caption="A 4-by-6 layer with a rank-r adapter. At step 0 the adapter changes nothing. After training, the merged weight reproduces the adapted output exactly in float64, and storing it in float16 costs a rounding error.">
+  <LoraMerge client:visible />
+</Figure>
+
+<Source file="octlm/day8.py" symbol="merge_lora" />
+
+<Label>A failed check</Label>
+
+## The first gate was tighter than float16
+
+The plan said to stop if merged and unmerged logits differed by more than 0.05, "the float16 rounding scale". The first T4 run measured {first.max_absolute_difference.toFixed(3)} on a {first.tokens}-token prompt and stopped before the int8 eval.
+
+That looked like a broken merge. A float32 check on the laptop said otherwise:
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Comparison</th><th class="num">Max logit difference</th></tr></thead>
+    <tbody>
+      {laptop.map((row) => <tr><td>{row["Comparison"]}</td><td class="num">{row["Max logit difference"]}</td></tr>)}
+    </tbody>
+  </table>
+</div>
+
+In float32 the merge is exact to about $10^{-4}$. Rounding only the merged weights to float16 already costs {laptop[1]["Max logit difference"]}, and float16 activations across 28 blocks add the rest. The 0.05 was a guess. It was never measured, and it broke the project's own rule that a tolerance comes from a measured noise floor.
+
+<Figure label="How big is one float16 step?" caption="float16 has 10 mantissa bits, so the gap between neighbouring values doubles with every power of two. Move the slider to see the step at any logit size.">
+  <Float16Gap client:visible tolerance={0.05} measured={[{ name: "laptop f16 W", value: num(laptop[1]["Max logit difference"]) }, { name: "T4 run 1", value: first.max_absolute_difference }, { name: "T4 rerun", value: gate.max_absolute_difference }]} />
+</Figure>
+
+The largest logit on the prompt is about 38. Near 38, adjacent float16 values are $2^{5-10} = 0.031$ apart. Any tolerance near 0.05 sits within two rounding steps of the largest logits, so ordinary rounding trips it.
+
+The new gate asks a question rounding can't fake. Do the merged and unmerged models pick the same top-1 token at every position of the prompt? It still logs the max difference. The float32 table is the proof that the math is right.
+
+<Label>The rerun</Label>
+
+## Same top token at all {gate.tokens} positions
+
+Kaggle wouldn't take the errored run's adapter as an input, and uploading the 40 MB file from the laptop stalled. So the rerun trained seed 0 again on the T4, then merged, quantized and ran the full eval.
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Gate measure</th><th class="num">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Top-1 agreement, merged vs unmerged</td><td class="num">{gate.top_1_agreement.toFixed(3)}</td></tr>
+      <tr><td>Max logit difference</td><td class="num">{gate.max_absolute_difference.toFixed(3)}</td></tr>
+      <tr><td>Block weights, float16</td><td class="num">{mb(gate.float_block_bytes)} MB</td></tr>
+      <tr><td>Block weights, int8</td><td class="num">{mb(gate.int8_block_bytes)} MB</td></tr>
+      <tr><td>Ratio</td><td class="num">{(gate.int8_block_bytes / gate.float_block_bytes).toFixed(2)}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Label>A confound</Label>
+
+## The rerun trained a different adapter
+
+The rerun's adapter hash is `{hash(env)}`. The first run's was `{hash(eval0[0])}`. Same code, same data, same seed, different bits. The two loss curves agree within 0.001 for the first ten steps, then drift apart. Step 42 is {step(train0, 42).toFixed(3)} in the first run and {step(rerun, 42).toFixed(3)} in the rerun.
+
+<Figure label="Two seed-0 runs" caption="Seed 0 trained twice on a T4 with the same code and data. Nondeterministic GPU kernels and a few tokens of different tool output in the traces push the runs apart.">
+  <LossLines client:visible runs={[{ name: "first run", rows: train0 }, { name: "rerun", rows: rerun, dashed: true }]} note="The curves agree within a few percent for the first 20 steps, separate by the end of the first epoch, and differ by a factor of two or more on many steps of the third, where the losses are tiny." />
+</Figure>
+
+Two things differ between the runs. Some CUDA kernels PyTorch uses in training are nondeterministic unless you ask for deterministic ones, and the [training traces](/posts/scripted-traces/) contain a random sandbox path and unittest timings that change from run to run. So the int8 eval below runs a different adapter from the float16 eval it's compared with.
+
+<Label>Result</Label>
+
+## pass^1 holds at {f3(q.pass_1_mean)}
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Measure</th><th class="num">Unmerged float16, <code>{hash(eval0[0])}</code></th><th class="num">Merged int8, <code>{hash(env)}</code></th></tr></thead>
+    <tbody>
+      <tr><td>pass^1 mean</td><td class="num">{f3(fp.pass_1_mean)}</td><td class="num">{f3(q.pass_1_mean)}</td></tr>
+      <tr><td>pass^1 per sampling seed</td><td class="num">{fp.pass_1_per_seed.map(f3).join(", ")}</td><td class="num">{q.pass_1_per_seed.map(f3).join(", ")}</td></tr>
+      <tr><td>pass^3</td><td class="num">{f3(fp.pass_hat_3)}</td><td class="num">{f3(q.pass_hat_3)}</td></tr>
+      <tr><td>Valid-call rate</td><td class="num">{f3(fp.valid_call_rate)}</td><td class="num">{f3(q.valid_call_rate)}</td></tr>
+      {["answer", "file", "hidden", "tests"].map((kind) => <tr><td>Success, {kind}</td><td class="num">{f3(fp.success_by_kind[kind])}</td><td class="num">{f3(q.success_by_kind[kind])}</td></tr>)}
+      <tr><td>Runs stopped by the turn limit</td><td class="num">{fp.stops.turns}</td><td class="num">{q.stops.turns}</td></tr>
+      <tr><td>Mean turns</td><td class="num">{fp.mean_turns.toFixed(2)}</td><td class="num">{q.mean_turns.toFixed(2)}</td></tr>
+      <tr><td>Generated tokens per second</td><td class="num">{fp.generated_tokens_per_second.toFixed(1)}</td><td class="num">{q.generated_tokens_per_second.toFixed(1)}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+The mean is identical. Run by run, {both} of {a.length} runs pass in both evals, {onlyFp} pass only in float16, and {onlyQ} pass only in int8. The sets of solved runs overlap a lot but aren't the same, which is what two samplers over two similar models should produce.
+
+<Figure label="Run by run" caption="Switch between the unmerged float16 adapter and the merged int8 model. Dashed cells changed result between the two.">
+  <EvalGrid client:visible tasks={day7.tasks} sets={[{ value: "fp16", text: "Unmerged float16", runs: a }, { value: "int8", text: "Merged int8", runs: b }]} start="int8" label="Model" flippedText="different result in the other model" />
+</Figure>
+
+The turn-limit stops doubled, from {fp.stops.turns} to {q.stops.turns}. Most of the rise is `answer` tasks, {stopsBy(a, "answer")} in float16 and {stopsBy(b, "answer")} in int8. The int8 model keeps reading files after it has the value, yet answers correctly as often. This eval can't say whether the new adapter or the int8 weights cause the looping, because both changed at once.
+
+Speed went up, from {fp.generated_tokens_per_second.toFixed(1)} to {q.generated_tokens_per_second.toFixed(1)} tokens per second. The stock model ran at {base.generated_tokens_per_second.toFixed(1)}. Merging removes 14 adapter matmuls per block, and int8 dequantization costs less than they did. Day 5 found int8 slower than float16 on the 20M model, so the gain comes from the merge, not from int8. A float16 merged eval would measure the split. It wasn't run.
+
+Decision: keep. The merge is exact in float32 and passes the top-1 gate. int8 halves the stored block weights, and pass^1 matches the float16 adapter. A fair comparison still needs the float16 eval of adapter `{hash(env)}`, one more 20-minute T4 run.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **A float16 merged eval.** It would split the speed gain between the merge and int8, and remove the adapter confound. The exit check didn't need it.
+- **int8 activations.** The weights are int8 but the matmuls run in float16 after dequantizing. True int8 matmuls need kernels PyTorch's eager mode doesn't offer on a T4.
+- **Deterministic training.** `torch.use_deterministic_algorithms` would make the reruns match, at a speed cost. It would hide nothing the eval needs, so it can wait until a result depends on bit-exact reruns.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://arxiv.org/abs/2106.09685">Hu et al. 2021</a> describe the merge. The <a href="https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/layer.py">PEFT LoRA layer</a> merges in float32. The <a href="https://docs.pytorch.org/docs/stable/notes/randomness.html">PyTorch reproducibility notes</a> list the nondeterministic CUDA operations. Runs are in <code>runs/kaggle-day8/</code> and <code>runs/kaggle-day8-int8/</code>, decisions in <code>notes/day8.md</code>.</p>
+</Callout>

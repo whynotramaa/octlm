@@ -215,10 +215,10 @@ def load_tasks(path: Path) -> list[dict]:
 
 
 @contextmanager
-def sandbox(task: dict):
+def sandbox(task: dict, fixtures: Path):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory, "repo").resolve()
-        shutil.copytree(FIXTURES / "repo", root, ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(fixtures / "repo", root, ignore=shutil.ignore_patterns("__pycache__"))
         for edit in task.get("setup", []):
             path = root / edit["path"]
             text = path.read_text(encoding="utf-8")
@@ -228,14 +228,14 @@ def sandbox(task: dict):
         yield root
 
 
-def tests_pass(root: Path, hidden: str | None = None) -> bool:
-    fixture = FIXTURES / "repo"
+def tests_pass(root: Path, fixtures: Path, hidden: str | None = None) -> bool:
+    fixture = fixtures / "repo"
     for path in files(fixture, fixture / "tests"):
         copy = root / path.relative_to(fixture)
         if not copy.is_file() or copy.read_bytes() != path.read_bytes():
             return False
     if hidden:
-        shutil.copy(FIXTURES / "hidden" / hidden, root / "tests" / hidden)
+        shutil.copy(fixtures / "hidden" / hidden, root / "tests" / hidden)
     return test_status(root)[0] == 0
 
 
@@ -244,7 +244,7 @@ def answer_matches(expected: str, answer: str) -> bool:
     return re.search(pattern, answer.casefold()) is not None
 
 
-def passes(task: dict, root: Path, answer: str | None) -> bool:
+def passes(task: dict, root: Path, answer: str | None, fixtures: Path) -> bool:
     check = task["check"]
     if check["kind"] == "answer":
         return answer is not None and answer_matches(check["expected"], answer)
@@ -253,7 +253,7 @@ def passes(task: dict, root: Path, answer: str | None) -> bool:
         text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
         kept = all(line in text for line in check.get("keep", ()))
         return kept and re.search(check["pattern"], text) is not None
-    return tests_pass(root, check.get("test"))
+    return tests_pass(root, fixtures, check.get("test"))
 
 
 def common_prefix(first: list[int], second: list[int]) -> int:
@@ -377,14 +377,23 @@ def summarize(rows: list[dict], seeds: list[int]) -> dict:
         / sum(row["seconds"] for row in rows),
         "prefill_fraction": sum(row["prefilled_tokens"] for row in rows)
         / sum(row["rendered_tokens"] for row in rows),
+        "pass_1_with_valid_call": statistics.mean(
+            row["success"] and row["valid_calls"] > 0 for row in rows
+        ),
     }
 
 
 def evaluate(args: argparse.Namespace) -> None:
-    tasks = load_tasks(args.tasks)
     device = resolve_device(args.device)
     dtype = torch.float16 if device.type == "cuda" else torch.float32
     model, manifest = load_qwen(args.model, str(device), dtype)
+    run_eval(model, manifest, args, {})
+
+
+def run_eval(model: Decoder, manifest: dict, args: argparse.Namespace, extra: dict) -> dict:
+    tasks = load_tasks(args.tasks)
+    device = model.token_embedding.weight.device
+    dtype = model.token_embedding.weight.dtype
     tokenizer, settings = QwenTokenizer(args.model), sampling(args.model, thinking=False)
     _write(
         args.out,
@@ -403,20 +412,24 @@ def evaluate(args: argparse.Namespace) -> None:
             "tasks_hash": file_hash(args.tasks),
             "source_hashes": {
                 name: file_hash(Path(__file__).with_name(name))
-                for name in ("harness.py", "day6.py", "model.py")
+                for name in ("harness.py", "day6.py", "model.py", "day8.py")
+                if Path(__file__).with_name(name).exists()
             },
+            **extra,
         },
     )
     rows = []
     for task in tasks:
         for seed in args.seeds:
-            with sandbox(task) as root:
+            with sandbox(task, args.tasks.parent) as root:
                 record = run_task(model, tokenizer, settings, task, root, seed)
-                success = passes(task, root, record["answer"])
+                success = passes(task, root, record["answer"], args.tasks.parent)
             row = {"type": "day7_run", "task": task["id"], "kind": task["check"]["kind"]}
             rows.append({**row, "seed": seed, "success": success, **record})
             _write(args.out, rows[-1])
-    _write(args.out, summarize(rows, args.seeds))
+    summary = summarize(rows, args.seeds)
+    _write(args.out, summary)
+    return summary
 
 
 def replay(task: dict, root: Path) -> list[str]:
@@ -433,13 +446,13 @@ def replay(task: dict, root: Path) -> list[str]:
 
 
 def validate(args: argparse.Namespace) -> None:
-    tasks = load_tasks(args.tasks)
+    tasks, fixtures = load_tasks(args.tasks), args.tasks.parent
     for task in tasks:
-        with sandbox(task) as root:
-            before = passes(task, root, "")
-        with sandbox(task) as root:
+        with sandbox(task, fixtures) as root:
+            before = passes(task, root, "", fixtures)
+        with sandbox(task, fixtures) as root:
             results = replay(task, root)
-            after = passes(task, root, task["solution"]["answer"])
+            after = passes(task, root, task["solution"]["answer"], fixtures)
         check = task["check"]
         found = (
             check["kind"] != "answer"

@@ -1,0 +1,1970 @@
+[
+ {
+  "id": "t-port",
+  "prompt": "What port does the server listen on according to config/app.ini? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "7310"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "7310"
+  }
+ },
+ {
+  "id": "t-host",
+  "prompt": "Which host address is set for the server in the config? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "127.0.0.1"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "127.0.0.1"
+  }
+ },
+ {
+  "id": "t-workers",
+  "prompt": "How many workers does the server config ask for? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "3"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "3"
+  }
+ },
+ {
+  "id": "t-db-name",
+  "prompt": "What database name does the app config use? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "lib_prod"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "lib_prod"
+  }
+ },
+ {
+  "id": "t-db-user",
+  "prompt": "Which database user is configured? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "librarian"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "librarian"
+  }
+ },
+ {
+  "id": "t-db-timeout",
+  "prompt": "What is the database timeout in config/app.ini? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "20"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "20"
+  }
+ },
+ {
+  "id": "t-max-books",
+  "prompt": "How many books may a member borrow at once according to the loans config? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "5"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    }
+   ],
+   "answer": "5"
+  }
+ },
+ {
+  "id": "t-version",
+  "prompt": "What version is the library package? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "0.9.2"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/__init__.py"
+     }
+    }
+   ],
+   "answer": "0.9.2"
+  }
+ },
+ {
+  "id": "t-fine",
+  "prompt": "How much is the fine per late day in the loans module? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "0.25"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    }
+   ],
+   "answer": "0.25"
+  }
+ },
+ {
+  "id": "t-max-days",
+  "prompt": "What value does MAX_DAYS have in the code? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "21"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "MAX_DAYS ="
+     }
+    }
+   ],
+   "answer": "21"
+  }
+ },
+ {
+  "id": "t-city-2",
+  "prompt": "Which city does member 2 live in? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Kumasi"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/members.csv"
+     }
+    }
+   ],
+   "answer": "Kumasi"
+  }
+ },
+ {
+  "id": "t-city-noor",
+  "prompt": "Where does the member named Noor live? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Amman"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/members.csv"
+     }
+    }
+   ],
+   "answer": "Amman"
+  }
+ },
+ {
+  "id": "t-name-3",
+  "prompt": "What is the name of the member with id 3? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Lena"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/members.csv"
+     }
+    }
+   ],
+   "answer": "Lena"
+  }
+ },
+ {
+  "id": "t-member-count",
+  "prompt": "How many members are in data/members.csv, not counting the header? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "6",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/members.csv"
+     }
+    }
+   ],
+   "answer": "6"
+  }
+ },
+ {
+  "id": "t-author",
+  "prompt": "Who wrote Middlemarch according to data/books.csv? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "George Eliot"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    }
+   ],
+   "answer": "George Eliot"
+  }
+ },
+ {
+  "id": "t-year",
+  "prompt": "Which year is listed for Life of Pi in the books data? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "2003"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    }
+   ],
+   "answer": "2003"
+  }
+ },
+ {
+  "id": "t-isbn",
+  "prompt": "What is the ISBN of The Odyssey in the books data? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "9780140449136"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    }
+   ],
+   "answer": "9780140449136"
+  }
+ },
+ {
+  "id": "t-hawking",
+  "prompt": "Which book by Stephen Hawking is in the books data? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "A Brief History of Time"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    }
+   ],
+   "answer": "A Brief History of Time"
+  }
+ },
+ {
+  "id": "t-book-count",
+  "prompt": "How many books does data/books.csv list? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "5",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    }
+   ],
+   "answer": "5"
+  }
+ },
+ {
+  "id": "t-def-small",
+  "prompt": "Which file defines small_shelves? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "library/catalog.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def small_shelves"
+     }
+    }
+   ],
+   "answer": "library/catalog.py"
+  }
+ },
+ {
+  "id": "t-def-initials",
+  "prompt": "Where is the function initials defined? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "library/text.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def initials"
+     }
+    }
+   ],
+   "answer": "library/text.py"
+  }
+ },
+ {
+  "id": "t-def-borrow",
+  "prompt": "Which file defines can_borrow? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "library/loans.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def can_borrow"
+     }
+    }
+   ],
+   "answer": "library/loans.py"
+  }
+ },
+ {
+  "id": "t-class-roster",
+  "prompt": "Which module defines the Roster class? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "library/members.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "class Roster"
+     }
+    }
+   ],
+   "answer": "library/members.py"
+  }
+ },
+ {
+  "id": "t-shorten-width",
+  "prompt": "What is the default width of shorten? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "20"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def shorten"
+     }
+    }
+   ],
+   "answer": "20"
+  }
+ },
+ {
+  "id": "t-small-limit",
+  "prompt": "What default limit does small_shelves use? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "10"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def small_shelves"
+     }
+    }
+   ],
+   "answer": "10"
+  }
+ },
+ {
+  "id": "t-borrow-limit",
+  "prompt": "What is the default limit in can_borrow? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "5"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def can_borrow"
+     }
+    }
+   ],
+   "answer": "5"
+  }
+ },
+ {
+  "id": "t-poetry",
+  "prompt": "How many books are on the poetry shelf in the catalog module? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "8"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    }
+   ],
+   "answer": "8"
+  }
+ },
+ {
+  "id": "t-science",
+  "prompt": "How many science books does SHELVES list? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "60"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "SHELVES ="
+     }
+    }
+   ],
+   "answer": "60"
+  }
+ },
+ {
+  "id": "t-title-user",
+  "prompt": "Which module imports format_title? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "catalog"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "import format_title"
+     }
+    }
+   ],
+   "answer": "library/catalog.py"
+  }
+ },
+ {
+  "id": "t-test-count",
+  "prompt": "How many test_*.py files does the tests directory hold? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "4",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "list_files",
+     "arguments": {
+      "path": "tests"
+     }
+    }
+   ],
+   "answer": "4"
+  }
+ },
+ {
+  "id": "t-module-count",
+  "prompt": "How many .py files are in the library package, including __init__.py? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "5",
+   "derived": true
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "list_files",
+     "arguments": {
+      "path": "library"
+     }
+    }
+   ],
+   "answer": "5"
+  }
+ },
+ {
+  "id": "t-license",
+  "prompt": "What license does the README state? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "MIT"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "README.md"
+     }
+    }
+   ],
+   "answer": "MIT"
+  }
+ },
+ {
+  "id": "t-maintainer",
+  "prompt": "Who is the maintainer named in the README? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "Tomas Reyes"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "README.md"
+     }
+    }
+   ],
+   "answer": "Tomas Reyes"
+  }
+ },
+ {
+  "id": "t-due-in",
+  "prompt": "Find the function due_in and tell me which constant it subtracts days_out from. Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "MAX_DAYS"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def due_in"
+     }
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    }
+   ],
+   "answer": "MAX_DAYS"
+  }
+ },
+ {
+  "id": "t-label-helper",
+  "prompt": "Which helper does label call to format the title? Reply with the answer.",
+  "check": {
+   "kind": "answer",
+   "expected": "format_title"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "grep",
+     "arguments": {
+      "pattern": "def label"
+     }
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    }
+   ],
+   "answer": "format_title"
+  }
+ },
+ {
+  "id": "t-set-port",
+  "prompt": "Change the server port in config/app.ini to 8100.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^port\\s*=\\s*8100$",
+   "keep": [
+    "[database]",
+    "name = lib_prod",
+    "max_books = 5"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 8100\nworkers = 3\n\n[database]\nname = lib_prod\nuser = librarian\ntimeout = 20\n\n[loans]\nmax_days = 21\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-host",
+  "prompt": "Make the server bind to 0.0.0.0 in config/app.ini.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^host\\s*=\\s*0\\.0\\.0\\.0$",
+   "keep": [
+    "port = 7310",
+    "user = librarian"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 0.0.0.0\nport = 7310\nworkers = 3\n\n[database]\nname = lib_prod\nuser = librarian\ntimeout = 20\n\n[loans]\nmax_days = 21\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-workers",
+  "prompt": "Set the number of server workers to 6 in the config.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^workers\\s*=\\s*6$",
+   "keep": [
+    "port = 7310",
+    "timeout = 20"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 7310\nworkers = 6\n\n[database]\nname = lib_prod\nuser = librarian\ntimeout = 20\n\n[loans]\nmax_days = 21\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-user",
+  "prompt": "Change the database user in config/app.ini to reader.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^user\\s*=\\s*reader$",
+   "keep": [
+    "name = lib_prod",
+    "max_days = 21"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 7310\nworkers = 3\n\n[database]\nname = lib_prod\nuser = reader\ntimeout = 20\n\n[loans]\nmax_days = 21\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-timeout",
+  "prompt": "Raise the database timeout in config/app.ini to 35.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^timeout\\s*=\\s*35$",
+   "keep": [
+    "port = 7310",
+    "max_books = 5"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 7310\nworkers = 3\n\n[database]\nname = lib_prod\nuser = librarian\ntimeout = 35\n\n[loans]\nmax_days = 21\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-max-days",
+  "prompt": "Set max_days in the loans section of config/app.ini to 28.",
+  "check": {
+   "kind": "file",
+   "path": "config/app.ini",
+   "pattern": "(?m)^max_days\\s*=\\s*28$",
+   "keep": [
+    "[server]",
+    "max_books = 5"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "config/app.ini"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "config/app.ini",
+      "content": "[server]\nhost = 127.0.0.1\nport = 7310\nworkers = 3\n\n[database]\nname = lib_prod\nuser = librarian\ntimeout = 20\n\n[loans]\nmax_days = 28\nmax_books = 5\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-bump",
+  "prompt": "Bump the library version in library/__init__.py to 1.0.0.",
+  "check": {
+   "kind": "file",
+   "path": "library/__init__.py",
+   "pattern": "__version__\\s*=\\s*[\\\"']1\\.0\\.0[\\\"']",
+   "keep": []
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/__init__.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/__init__.py",
+      "content": "__version__ = \"1.0.0\"\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-add-member",
+  "prompt": "Add a member with id 7, name Pia, city Oslo to data/members.csv.",
+  "check": {
+   "kind": "file",
+   "path": "data/members.csv",
+   "pattern": "(?m)^7,Pia,Oslo$",
+   "keep": [
+    "1,Ines,Porto",
+    "6,Oren,Haifa"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/members.csv"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "data/members.csv",
+      "content": "id,name,city\n1,Ines,Porto\n2,Kofi,Kumasi\n3,Lena,Graz\n4,Milo,Cork\n5,Noor,Amman\n6,Oren,Haifa\n7,Pia,Oslo\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-add-book",
+  "prompt": "Add the book Dune by Frank Herbert, ISBN 9780441013593, year 2005, to data/books.csv.",
+  "check": {
+   "kind": "file",
+   "path": "data/books.csv",
+   "pattern": "(?m)^9780441013593,Dune,Frank Herbert,2005$",
+   "keep": [
+    "9780140449136,The Odyssey,Homer,1997",
+    "Middlemarch"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "data/books.csv"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "data/books.csv",
+      "content": "isbn,title,author,year\n9780140449136,The Odyssey,Homer,1997\n9780679783268,Pride and Prejudice,Jane Austen,2000\n9780553380163,A Brief History of Time,Stephen Hawking,1998\n9780141439518,Middlemarch,George Eliot,2003\n9780156027328,Life of Pi,Yann Martel,2003\n9780441013593,Dune,Frank Herbert,2005\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-add-shelf",
+  "prompt": "Add a maps shelf with 15 books to SHELVES in library/catalog.py.",
+  "check": {
+   "kind": "file",
+   "path": "library/catalog.py",
+   "pattern": "[\\\"']maps[\\\"']\\s*:\\s*15\\b",
+   "keep": [
+    "\"fiction\": 120",
+    "def label"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8, \"maps\": 15}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-set-fine",
+  "prompt": "Change FINE_PER_DAY in library/loans.py to 0.5.",
+  "check": {
+   "kind": "file",
+   "path": "library/loans.py",
+   "pattern": "(?m)^FINE_PER_DAY\\s*=\\s*0\\.50?$",
+   "keep": [
+    "MAX_DAYS = 21",
+    "def can_borrow"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.5\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-readme-install",
+  "prompt": "Add an Install section heading to README.md.",
+  "check": {
+   "kind": "file",
+   "path": "README.md",
+   "pattern": "(?m)^#+\\s*Install",
+   "keep": [
+    "# library",
+    "Maintainer: Tomas Reyes"
+   ]
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "README.md"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "README.md",
+      "content": "# library\n\nA small lending library package: loans, the catalog, members, and text helpers.\n\nRun the tests with `python -m unittest discover -s tests -t .`.\n\n## Install\n\nLicense: MIT\nMaintainer: Tomas Reyes\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-ideas",
+  "prompt": "Create notes/ideas.txt containing the line: add audio books",
+  "check": {
+   "kind": "file",
+   "path": "notes/ideas.txt",
+   "pattern": "(?m)^add audio books$"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "notes/ideas.txt",
+      "content": "add audio books\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-usage",
+  "prompt": "Create docs/USAGE.md whose first line is the heading # Usage.",
+  "check": {
+   "kind": "file",
+   "path": "docs/USAGE.md",
+   "pattern": "\\A# Usage"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "docs/USAGE.md",
+      "content": "# Usage\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-todo",
+  "prompt": "Create TODO.md with the line: - [ ] index authors",
+  "check": {
+   "kind": "file",
+   "path": "TODO.md",
+   "pattern": "(?m)^- \\[ \\] index authors$"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "TODO.md",
+      "content": "- [ ] index authors\n"
+     }
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-overdue",
+  "prompt": "Add a function overdue(days_out) to library/loans.py that returns True when days_out is greater than MAX_DAYS. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_overdue.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef overdue(days_out):\n    return days_out > MAX_DAYS\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-late-days",
+  "prompt": "Add a function late_days(days_out) to library/loans.py that returns how many days past MAX_DAYS the loan is, or 0 if it is not late. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_late_days.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef late_days(days_out):\n    return max(0, days_out - MAX_DAYS)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-vowels",
+  "prompt": "Add a function vowel_count(text) to library/text.py that counts the vowels a, e, i, o, u in text, ignoring case. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_vowel_count.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef vowel_count(text):\n    return sum(letter in \"aeiou\" for letter in text.lower())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-palindrome",
+  "prompt": "Add a function is_palindrome(text) to library/text.py that ignores case and spaces. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_is_palindrome.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef is_palindrome(text):\n    letters = text.replace(\" \", \"\").lower()\n    return letters == letters[::-1]\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-snake",
+  "prompt": "Add a function snake_case(text) to library/text.py that lowercases text and joins its words with underscores. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_snake_case.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef snake_case(text):\n    return \"_\".join(text.lower().split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-total-books",
+  "prompt": "Add a function total_books() to library/catalog.py that returns the sum of all shelf counts in SHELVES. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_total_books.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef total_books():\n    return sum(SHELVES.values())\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-shelf-names",
+  "prompt": "Add a function shelf_names() to library/catalog.py that returns the shelf names in sorted order. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_shelf_names.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef shelf_names():\n    return sorted(SHELVES)\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-lookup",
+  "prompt": "Add a lookup(member_id) method to Roster in library/members.py that returns the member's name or None. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_lookup.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def lookup(self, member_id):\n        return self.members.get(member_id)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-rename",
+  "prompt": "Add a rename(member_id, name) method to Roster in library/members.py that changes a member's name and raises KeyError for an unknown id. Keep the existing tests passing.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_rename.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def rename(self, member_id, name):\n        if member_id not in self.members:\n            raise KeyError(member_id)\n        self.members[member_id] = name\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-isbn13",
+  "prompt": "Create library/isbn.py with a function is_isbn13(text) that returns True only for a string of exactly 13 digits.",
+  "check": {
+   "kind": "hidden",
+   "test": "test_isbn.py"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/isbn.py",
+      "content": "def is_isbn13(text):\n    return len(text) == 13 and text.isdigit()\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Done."
+  }
+ },
+ {
+  "id": "t-bug-due",
+  "prompt": "due_in returns negative days for fresh loans. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/loans.py",
+    "old": "MAX_DAYS - days_out",
+    "new": "days_out - MAX_DAYS"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-fine",
+  "prompt": "fine charges members for negative late days. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/loans.py",
+    "old": "max(0, days_late)",
+    "new": "days_late"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-borrow",
+  "prompt": "can_borrow lets members go over the limit. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/loans.py",
+    "old": "count < limit",
+    "new": "count <= limit"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/loans.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/loans.py",
+      "content": "MAX_DAYS = 21\nFINE_PER_DAY = 0.25\n\n\ndef due_in(days_out):\n    return MAX_DAYS - days_out\n\n\ndef fine(days_late):\n    return round(max(0, days_late) * FINE_PER_DAY, 2)\n\n\ndef can_borrow(count, limit=5):\n    return count < limit\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-title",
+  "prompt": "format_title lowercases every word. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/text.py",
+    "old": "word.capitalize()",
+    "new": "word.lower()"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-initials",
+  "prompt": "initials keeps lowercase letters. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/text.py",
+    "old": "part[0].upper()",
+    "new": "part[0]"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-shorten",
+  "prompt": "shorten returns text longer than the width. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/text.py",
+    "old": "width - 3",
+    "new": "width"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/text.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/text.py",
+      "content": "def format_title(title):\n    return \" \".join(word.capitalize() for word in title.split())\n\n\ndef initials(name):\n    return \"\".join(part[0].upper() for part in name.split())\n\n\ndef shorten(text, width=20):\n    if len(text) <= width:\n        return text\n    return text[: width - 3] + \"...\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-shelf",
+  "prompt": "shelf_size reports books on shelves that do not exist. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/catalog.py",
+    "old": "return SHELVES.get(name, 0)",
+    "new": "return SHELVES.get(name, 1)"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-small",
+  "prompt": "small_shelves returns the big shelves. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/catalog.py",
+    "old": "if count < limit",
+    "new": "if count > limit"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-add",
+  "prompt": "add_books removes books instead of adding them. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/catalog.py",
+    "old": "SHELVES.get(name, 0) + count",
+    "new": "SHELVES.get(name, 0) - count"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-label",
+  "prompt": "label leaves titles unformatted. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/catalog.py",
+    "old": "{format_title(title)} [",
+    "new": "{title} ["
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/catalog.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/catalog.py",
+      "content": "from library.text import format_title\n\nSHELVES = {\"fiction\": 120, \"history\": 45, \"science\": 60, \"poetry\": 8}\n\n\ndef shelf_size(name):\n    return SHELVES.get(name, 0)\n\n\ndef small_shelves(limit=10):\n    return sorted(name for name, count in SHELVES.items() if count < limit)\n\n\ndef add_books(name, count):\n    SHELVES[name] = SHELVES.get(name, 0) + count\n    return SHELVES[name]\n\n\ndef label(title, shelf):\n    return f\"{format_title(title)} [{shelf}]\"\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-join",
+  "prompt": "Roster.join accepts member id 0. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/members.py",
+    "old": "member_id < 1",
+    "new": "member_id < 0"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-names",
+  "prompt": "Roster.names comes back unsorted. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/members.py",
+    "old": "sorted(self.members.values())",
+    "new": "list(self.members.values())"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-size",
+  "prompt": "Roster.size counts one member too many. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/members.py",
+    "old": "len(self.members)",
+    "new": "len(self.members) + 1"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ },
+ {
+  "id": "t-bug-leave",
+  "prompt": "Roster.leave does not remove the member. Run the tests, find the bug, and fix the code. Do not edit the tests.",
+  "setup": [
+   {
+    "path": "library/members.py",
+    "old": "self.members.pop(member_id, None)",
+    "new": "self.members.get(member_id)"
+   }
+  ],
+  "check": {
+   "kind": "tests"
+  },
+  "solution": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {}
+    },
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": "library/members.py"
+     }
+    },
+    {
+     "name": "write_file",
+     "arguments": {
+      "path": "library/members.py",
+      "content": "class Roster:\n    def __init__(self):\n        self.members = {}\n\n    def join(self, member_id, name):\n        if member_id < 1:\n            raise ValueError(\"member id must be positive\")\n        self.members[member_id] = name\n\n    def leave(self, member_id):\n        self.members.pop(member_id, None)\n\n    def size(self):\n        return len(self.members)\n\n    def names(self):\n        return sorted(self.members.values())\n"
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {}
+    }
+   ],
+   "answer": "Fixed."
+  }
+ }
+]

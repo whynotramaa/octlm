@@ -1,0 +1,129 @@
+---
+title: Training data from a scripted expert
+description: "Fine-tuning needs transcripts of the model doing the job right. The base model solves 1 task in 40, and the terms of a stronger API model forbid training on its output. octlm writes the transcripts with a scripted expert that replays hand-written solutions through the real tools."
+day: 8
+order: 2
+exps: ["EXP-081"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import TraceView from "../../widgets/TraceView.tsx";
+import day7 from "../../data/day7.json";
+import day8 from "../../data/day8.json";
+import traceRows from "../../data/runs/day8-traces.json";
+import validation from "../../data/runs/day8-validate.json";
+import baseRows from "../../data/runs/day7-eval.json";
+
+export const summary = traceRows.at(-1);
+export const messages = Object.fromEntries(traceRows.filter((row) => row.type === "day8_trace").map((row) => [row.task, row.messages]));
+export const checked = validation.filter((row) => row.type === "task_validation");
+export const base = baseRows.at(-1);
+export const int = (value) => Math.round(value).toLocaleString("en-US");
+export const kinds = Object.entries(summary.by_kind);
+
+[LoRA](/posts/lora-from-scratch/) makes fine-tuning fit on a T4. Now we need something to fine-tune on: transcripts where a model reads the repository, calls tools in the right format, and finishes the task. This post builds {summary.tasks} of them.
+
+<Label>Where traces come from</Label>
+
+## Both planned sources fail
+
+The plan offered two sources. Neither works here.
+
+- **Filtered runs of the base model.** Run Qwen on training tasks and keep the runs that pass. The base model scores pass^1 {base.pass_1_mean.toFixed(3)} on the [Day 7 eval](/posts/the-day7-eval/). At that rate, {summary.tasks} training tasks would yield about two passing runs.
+- **A stronger model through an API.** Anthropic's [Commercial Terms](https://www.anthropic.com/legal/commercial-terms), section D.4, forbid using the service "to build a competing product or service, including to train competing AI models". A larger open Qwen would work legally, but it needs another architecture check and GPU hours just to generate data.
+
+So octlm takes a third route. Every training task already has a reference solution written as tool calls, because [task validation](/posts/the-day7-eval/) needs one. A scripted expert replays that solution through the real harness tools, in a fresh sandbox, and records what happened as a conversation. That's behavior cloning from a hand-written policy. It costs no GPU time and raises no license question.
+
+<Label>Two rules</Label>
+
+## The expert has to act like a model could
+
+A replayed solution teaches whatever it contains, including shortcuts. Two rules make the traces teach the behavior Day 7 found missing.
+
+1. **Read before you write.** Day 7's reference solutions write a file without reading it first. They were written to check the checks, and the author already knew the file. A model doesn't. Every training edit is preceded by a `read_file` of the same path. Bug fixes run the tests first, read the file, write the fix, and run the tests again.
+2. **One call per turn, in the template's exact format.** Each assistant turn is `<tool_call>`, a newline, the JSON, a newline, and `</tool_call>`. The JSON comes from `json.dumps`, which escapes every newline inside a string. Raw newlines in `write_file` content were half of Day 7's invalid calls.
+
+Each trace must pass its own task check before it is kept. A trace that fails stops the stage.
+
+<Source file="octlm/day8.py" symbol="trace" />
+
+<Label>Keeping eval tasks out</Label>
+
+## A different repository
+
+If training tasks overlap the eval, the score measures memory, not skill. The eval runs on `shop`, a toy store package. Training uses `fixtures/day8/repo`, a different package called `library`, with its own config, data files, four modules and 14 tests. No training task shares a repository, file, function name, prompt or answer with an eval task, and the trace stage refuses to run if any training prompt equals an eval prompt.
+
+The task kinds do repeat. Both sets have config lookups, file edits, new functions and planted bugs, because the point is to teach the tool protocol, not new skills. So the eval measures transfer to a new repository, not to new kinds of task.
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Kind</th><th class="num">Training tasks</th><th class="num">Eval tasks</th></tr></thead>
+    <tbody>
+      {kinds.map(([kind, count]) => <tr><td>{kind}</td><td class="num">{count}</td><td class="num">{day7.tasks.filter((t) => t.check.kind === kind).length}</td></tr>)}
+    </tbody>
+  </table>
+</div>
+
+{checked.filter((row) => row.fails_before && row.passes_after).length} of {checked.length} training tasks passed validation: each check fails on the untouched repository and passes after its solution.
+
+<Label>From traces to examples</Label>
+
+## One example per assistant turn
+
+The obvious move is to render each conversation once and train on the whole thing. Qwen's chat template breaks that. It prints an empty `<think>\n\n</think>` block on the turn being generated, and drops it from every earlier assistant turn. A conversation rendered in one piece shows every turn but the last in a form the harness never produces at inference time.
+
+So each assistant turn becomes its own example. The prompt is the conversation up to that turn, rendered with the generation prompt exactly as the harness renders it. The target is the reply plus `<|im_end|>`. The code encodes prompt and target as one string, then checks that the prompt's token IDs are a prefix of the result, so the boundary can never split a BPE merge.
+
+The loss counts target tokens only. [QLoRA](https://arxiv.org/abs/2305.14314) found that training on targets alone beat training on prompt and target together on all four datasets it tried.
+
+<Figure label="Read a trace" caption="Pick any training task. Blue messages are what the model learns to write. Everything else is context the loss skips. The bars show each example's prompt and target tokens.">
+  <TraceView client:visible traces={day8.traces} messages={messages} />
+</Figure>
+
+<Label>Result</Label>
+
+## Most of every example is context
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Measure</th><th class="num">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Traces</td><td class="num">{summary.tasks}</td></tr>
+      <tr><td>SFT examples, one per assistant turn</td><td class="num">{summary.examples}</td></tr>
+      <tr><td>Tokens per epoch</td><td class="num">{int(summary.total_tokens)}</td></tr>
+      <tr><td>Target tokens per epoch</td><td class="num">{int(summary.target_tokens)}</td></tr>
+      <tr><td>Longest example</td><td class="num">{int(summary.longest)} tokens</td></tr>
+    </tbody>
+  </table>
+</div>
+
+Targets are {(100 * summary.target_tokens / summary.total_tokens).toFixed(1)} percent of the tokens. Every prompt opens with the same {day7.system_tokens}-token system turn and tool list, so {summary.examples} short replies cost {int(summary.total_tokens)} tokens of compute per epoch. That's still small. Three epochs take under five minutes on a T4.
+
+Every trace passed its own check, and no prompt matched an eval prompt. Decision: keep.
+
+<Label>A correction</Label>
+
+## The traces are not byte-for-byte reproducible
+
+The plan claimed the trace file would be identical on every run. It isn't. The table above comes from the laptop. The Kaggle runs built the same traces with a different total, because three things in tool output vary:
+
+- unittest prints `Ran 14 tests in 0.000s` on some runs and `0.001s` on others.
+- Tracebacks name the sandbox, a random temporary directory that changes every run.
+- The laptop's Python adds `~~~^^^` marker lines under traceback frames, and Kaggle's Python 3.12 mostly doesn't.
+
+The targets don't change, because the loss mask skips tool results. All runs train on the same {int(summary.target_tokens)} target tokens. The context around them differs by a few tokens per run. Stripping the timing and the sandbox path would fix it, but that means editing the Day 7 harness, and the eval has to stay frozen.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **Model-written traces.** A stronger open model could write more varied traces than a script. It costs GPU hours, and the scripted traces already passed the exit check.
+- **Failed traces.** Some recipes train on recoveries from errors. Every octlm trace succeeds on the first try, so the model never sees a tool error being fixed.
+- **More tasks.** {summary.tasks} tasks over four kinds is enough to teach a format. It isn't enough to teach debugging, and the results show it.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://www.anthropic.com/legal/commercial-terms">Anthropic Commercial Terms</a> section D.4 rules out API traces. The <a href="https://huggingface.co/Qwen/Qwen3-0.6B">Qwen3-0.6B model card</a> lists Apache 2.0. The <a href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/tokenizer_config.json">pinned chat template</a> shows the think-block rule. <a href="https://arxiv.org/abs/2305.14314">QLoRA</a> appendix B.3 supports target-only loss. Data is in <code>fixtures/day8/</code> and <code>runs/day8-traces.jsonl</code>, and decisions in <code>notes/day8.md</code>.</p>
+</Callout>

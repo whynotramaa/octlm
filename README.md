@@ -39,7 +39,12 @@ Day 7 is complete. `python -m octlm.harness eval` runs Qwen3-0.6B through a five
 seed spread of 0.025 and a valid-call rate of 0.333, mostly because it answers without calling a
 tool. That is the Day 8 baseline.
 
-Read `notes/day1.md` through `notes/day7.md` for the sources, measurements, decisions, and open
+Day 8 is complete. `python -m octlm.day8` builds 74 scripted tool-use traces, trains rank-16 LoRA
+adapters on all seven projections, and evaluates them with the Day 7 harness. Two training seeds
+reach pass^1 0.375 and 0.467 against the base 0.025, with valid-call rates above 0.97. The merged
+int8 model keeps pass^1 0.375 and halves the stored block weights.
+
+Read `notes/day1.md` through `notes/day8.md` for the sources, measurements, decisions, and open
 checks.
 
 ## Requirements

@@ -1,0 +1,129 @@
+---
+title: Fine-tuning Qwen to use its tools
+description: "Five minutes of LoRA training on 223 scripted examples takes Qwen3-0.6B from pass^1 0.025 to about 0.4 on the unchanged Day 7 eval. Valid tool calls go from a third to almost all. Two training seeds differ by more than the sampling seeds do, and tasks that need debugging stay unsolved."
+day: 8
+order: 3
+exps: ["EXP-082"]
+---
+
+import Figure from "../../components/Figure.astro";
+import Label from "../../components/Label.astro";
+import Source from "../../components/Source.astro";
+import Callout from "../../components/Callout.astro";
+import EvalGrid from "../../widgets/EvalGrid.tsx";
+import LossLines from "../../widgets/LossLines.tsx";
+import day7 from "../../data/day7.json";
+import baseRows from "../../data/runs/day7-eval.json";
+import eval0 from "../../data/runs/day8-eval-0.json";
+import eval1 from "../../data/runs/day8-eval-1.json";
+import train0 from "../../data/runs/day8-train-0.json";
+import train1 from "../../data/runs/day8-train-1.json";
+import traceRows from "../../data/runs/day8-traces.json";
+
+export const runsOf = (rows) => rows.filter((row) => row.type === "day7_run");
+export const base = baseRows.at(-1);
+export const s0 = eval0.at(-1);
+export const s1 = eval1.at(-1);
+export const steps0 = train0.filter((row) => row.type === "sft_step");
+export const steps1 = train1.filter((row) => row.type === "sft_step");
+export const done0 = train0.at(-1);
+export const traces = traceRows.at(-1);
+export const [rank, alpha, lr, batch, epochs, clip] = done0.settings;
+export const f3 = (value) => value.toFixed(3);
+export const mean = (s0.pass_1_mean + s1.pass_1_mean) / 2;
+export const gain = mean - base.pass_1_mean;
+export const gap = Math.abs(s0.pass_1_mean - s1.pass_1_mean);
+export const kinds = ["answer", "file", "hidden", "tests"];
+export const testsTried = (rows) => runsOf(rows).filter((r) => r.kind === "tests");
+export const testsPassed = testsTried(eval0).filter((r) => r.success).length + testsTried(eval1).filter((r) => r.success).length;
+export const testsRuns = testsTried(eval0).length + testsTried(eval1).length;
+export const range = (s) => Math.max(...s.pass_1_per_seed) - Math.min(...s.pass_1_per_seed);
+
+The [scripted traces](/posts/scripted-traces/) show Qwen reading before it answers and writing valid JSON. Now we train on them with [LoRA](/posts/lora-from-scratch/) and rerun the [Day 7 eval](/posts/the-day7-eval/) with nothing changed. It uses the same {day7.tasks.length} tasks, the same three sampling seeds and the same limits.
+
+<Label>Setup</Label>
+
+## Settings frozen before the run
+
+The plan fixed every setting before the first step, starting from QLoRA's 7B recipe:
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Setting</th><th class="num">Value</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Rank and α</td><td class="num">{rank} and {alpha}</td><td>QLoRA found rank barely matters once every layer is adapted</td></tr>
+      <tr><td>Learning rate</td><td class="num">{lr}, constant</td><td>QLoRA's 7B rate. LoRA wants about ten times the full fine-tuning rate</td></tr>
+      <tr><td>Examples per optimizer step</td><td class="num">{batch}</td><td>LoRA loses more than full fine-tuning as the batch grows</td></tr>
+      <tr><td>Epochs</td><td class="num">{epochs}</td><td>{traces.examples} examples, so {done0.steps} optimizer steps</td></tr>
+      <tr><td>Max gradient norm</td><td class="num">{clip}</td><td>QLoRA's setting</td></tr>
+      <tr><td>Optimizer</td><td class="num">AdamW</td><td>betas (0.9, 0.999), no weight decay</td></tr>
+      <tr><td>Precision</td><td class="num">float16 autocast</td><td>The T4 has no bfloat16, so a GradScaler guards against underflow</td></tr>
+    </tbody>
+  </table>
+</div>
+
+Two adapters train with seeds 0 and 1. The seed sets A's initialization and the example order. Comparing the two shows how much of the result is luck.
+
+<Source file="octlm/day8.py" symbol="stage_train" />
+
+<Label>Training</Label>
+
+## The loss goes to almost zero
+
+<Figure label="Loss" caption="Loss on target tokens at every optimizer step, both seeds. Each point is one batch of 8 examples, so it jumps with which examples landed in the batch.">
+  <LossLines client:visible runs={[{ name: "seed 0", rows: train0 }, { name: "seed 1", rows: train1 }]} note={`Seed 0 starts at ${steps0[0].loss.toFixed(2)} and ends at ${steps0.at(-1).loss.toExponential(1)}. Seed 1 starts at ${steps1[0].loss.toFixed(2)} and ends at ${steps1.at(-1).loss.toExponential(1)}. The log axis shows the drop continuing through the third epoch, long after the linear axis looks flat.`} />
+</Figure>
+
+Losses this low on {traces.target_tokens.toLocaleString("en-US")} target tokens mean the adapters memorized the traces. There's no held-out loss to say otherwise, because the eval is the held-out test. Each run took about {Math.round(done0.seconds)} seconds at {Math.round(done0.tokens_per_second).toLocaleString("en-US")} tokens per second.
+
+<Label>Result</Label>
+
+## pass^1 goes from {f3(base.pass_1_mean)} to {f3(mean)}
+
+<div class="table-scroll">
+  <table>
+    <thead><tr><th>Measure</th><th class="num">Day 7 base</th><th class="num">Seed 0</th><th class="num">Seed 1</th></tr></thead>
+    <tbody>
+      <tr><td>pass^1 mean</td><td class="num">{f3(base.pass_1_mean)}</td><td class="num">{f3(s0.pass_1_mean)}</td><td class="num">{f3(s1.pass_1_mean)}</td></tr>
+      <tr><td>pass^1 per sampling seed</td><td class="num">{base.pass_1_per_seed.map(f3).join(", ")}</td><td class="num">{s0.pass_1_per_seed.map(f3).join(", ")}</td><td class="num">{s1.pass_1_per_seed.map(f3).join(", ")}</td></tr>
+      <tr><td>pass^3</td><td class="num">{f3(base.pass_hat_3)}</td><td class="num">{f3(s0.pass_hat_3)}</td><td class="num">{f3(s1.pass_hat_3)}</td></tr>
+      <tr><td>Valid-call rate</td><td class="num">{f3(base.valid_call_rate)}</td><td class="num">{f3(s0.valid_call_rate)}</td><td class="num">{f3(s1.valid_call_rate)}</td></tr>
+      {kinds.map((kind) => <tr><td>Success, {kind}</td><td class="num">{f3(base.success_by_kind[kind])}</td><td class="num">{f3(s0.success_by_kind[kind])}</td><td class="num">{f3(s1.success_by_kind[kind])}</td></tr>)}
+      <tr><td>Mean turns</td><td class="num">{base.mean_turns.toFixed(2)}</td><td class="num">{s0.mean_turns.toFixed(2)}</td><td class="num">{s1.mean_turns.toFixed(2)}</td></tr>
+      <tr><td>Runs stopped by the turn limit</td><td class="num">{base.stops.turns}</td><td class="num">{s0.stops.turns}</td><td class="num">{s1.stops.turns}</td></tr>
+      <tr><td>Generated tokens per second</td><td class="num">{base.generated_tokens_per_second.toFixed(1)}</td><td class="num">{s0.generated_tokens_per_second.toFixed(1)}</td><td class="num">{s1.generated_tokens_per_second.toFixed(1)}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+The exit check, written before the run, asks whether the gain beats the spread between training seeds. The mean of the two adapters is {f3(mean)}. Minus the base {f3(base.pass_1_mean)}, that's a gain of {f3(gain)}, against a gap of {f3(gap)} between the adapters. The check passes by a factor of {Math.round(gain / gap)}.
+
+<Figure label="Every run" caption="One cell per run, as in the Day 7 eval. Switch between the base model and each adapter. Dashed cells changed result against the base model, or against seed 0 when you view the base.">
+  <EvalGrid client:visible tasks={day7.tasks} sets={[{ value: "base", text: "Day 7 base", runs: runsOf(baseRows) }, { value: "seed0", text: "Seed 0", runs: runsOf(eval0) }, { value: "seed1", text: "Seed 1", runs: runsOf(eval1) }]} start="seed0" label="Model" flippedText="different result from the reference" />
+</Figure>
+
+## Both Day 7 failures are gone
+
+Day 7 found two problems. The model answered without calling a tool, and its `write_file` JSON broke. The valid-call rate rose from {f3(base.valid_call_rate)} to above {f3(Math.min(s0.valid_call_rate, s1.valid_call_rate))}. pass^1 counting only runs with a valid call is {f3(s0.pass_1_with_valid_call)} and {f3(s1.pass_1_with_valid_call)}, equal to plain pass^1, so every pass came from a run that used a tool. The lucky guesses of the base model are gone.
+
+## Debugging is still out of reach
+
+`tests` tasks plant a bug and ask the model to fix it. The adapters passed {testsPassed} of {testsRuns} such runs. Seed 1 hit the turn limit in {s1.stops.turns} runs, including all {testsTried(eval1).filter((r) => r.stop === "turns").length} of its `tests` runs. It loops on reading files and running tests instead of writing a fix. The traces showed the right sequence, run the tests, read, fix, run again, but {traces.by_kind.tests} examples of a bug fix aren't enough to teach what the fix should be.
+
+## The training seed matters more than the sampling seed
+
+Within one adapter, the three sampling seeds span {f3(range(s0))} for seed 0 and {f3(range(s1))} for seed 1. Between the adapters, pass^1 moves by {f3(gap)}. Two adapters trained on the same data with the same settings behave differently, and the per-kind rows show it: seed 1 is better at `answer` and `hidden`, and seed 0 is better at `file`. One training run would have hidden that.
+
+Decision: keep. The fine-tune passes the exit check, and both Day 7 failure modes are gone.
+
+<Label>Skipped</Label>
+
+## Not built
+
+- **A held-out training loss.** All {traces.tasks} traces went into training. The eval on a different repository is the held-out test, and it's the number that matters.
+- **More training seeds.** Two seeds meet the exit check. With a seed gap of {f3(gap)}, a finer comparison between settings would need more.
+- **Tuning.** Rank, learning rate and epochs stayed at the frozen values. Changing them after seeing the eval would turn the eval into a training signal.
+
+<Callout hue="gray" title="Sources">
+  <p><a href="https://arxiv.org/abs/2305.14314">QLoRA</a> section 4 and appendix B give the starting settings. <a href="https://thinkingmachines.ai/blog/lora/">LoRA Without Regret</a> gives the learning-rate and batch advice. The eval is <a href="https://arxiv.org/abs/2406.12045">tau-bench</a>'s pass^k over octlm's Day 7 tasks. Runs are in <code>runs/kaggle-day8/</code>, decisions in <code>notes/day8.md</code>.</p>
+</Callout>
